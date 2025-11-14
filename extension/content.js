@@ -95,6 +95,56 @@ function applyHighlights() {
     console.log('Page URL:', window.location.href);
     console.log('Available elements:', document.querySelectorAll('[id*="header"], [class*="header"]').length);
   }
+  
+  // Also check for video pages and add warning to video title
+  checkVideoPage();
+}
+
+// Check if we're on a video page and add warning to title if channel is highlighted
+function checkVideoPage() {
+  // Find video owner channel link
+  const ownerLink = document.querySelector('ytd-watch-metadata a.yt-simple-endpoint[href*="/@"], ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]');
+  
+  if (ownerLink) {
+    const channelId = extractChannelId(ownerLink.href);
+    console.log('Video page - Channel ID:', channelId);
+    
+    if (channelId && highlightedChannels[channelId]) {
+      console.log('Video is from highlighted channel, adding warning to title');
+      
+      // Find the video title
+      const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
+      
+      if (videoTitle && !videoTitle.querySelector('.yt-ai-warning')) {
+        const warning = document.createElement('span');
+        warning.className = 'yt-ai-warning';
+        warning.innerHTML = ' ⚠️ May contain AI';
+        warning.title = 'This channel may use AI-generated content';
+        warning.style.color = '#ff8800';
+        warning.style.fontWeight = 'bold';
+        warning.style.marginLeft = '12px';
+        warning.style.fontSize = '0.9em';
+        warning.style.display = 'inline-block';
+        warning.style.whiteSpace = 'nowrap';
+        warning.style.padding = '4px 8px';
+        warning.style.backgroundColor = 'rgba(255, 136, 0, 0.15)';
+        warning.style.borderRadius = '4px';
+        warning.style.border = '1px solid rgba(255, 136, 0, 0.4)';
+        
+        videoTitle.appendChild(warning);
+        console.log('Warning added to video title');
+      }
+    } else {
+      // Remove warning if channel is no longer highlighted
+      const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
+      if (videoTitle) {
+        const existingWarning = videoTitle.querySelector('.yt-ai-warning');
+        if (existingWarning) {
+          existingWarning.remove();
+        }
+      }
+    }
+  }
 }
 
 // Highlight an element with warning emoji
