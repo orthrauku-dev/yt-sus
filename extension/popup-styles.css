@@ -1,0 +1,244 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 400px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #333;
+}
+
+.container {
+  background: white;
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+header {
+  background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+  color: white;
+  padding: 20px;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+header h1 {
+  font-size: 24px;
+  margin-bottom: 5px;
+}
+
+.subtitle {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.current-channel {
+  padding: 20px;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.current-channel h2 {
+  font-size: 16px;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+#channelInfo {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  min-height: 60px;
+}
+
+.channel-details {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.channel-name {
+  font-weight: bold;
+  font-size: 14px;
+  color: #333;
+}
+
+.channel-id {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+}
+
+.info-text {
+  color: #666;
+  font-size: 13px;
+  text-align: center;
+  padding: 10px;
+}
+
+button {
+  width: 100%;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #cc0000 0%, #990000 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+button.highlighted {
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+}
+
+button.highlighted:hover {
+  background: linear-gradient(135deg, #45a049 0%, #3d8b40 100%);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.highlighted-list {
+  padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  max-height: 300px;
+}
+
+.list-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.list-header h2 {
+  font-size: 16px;
+  color: #333;
+}
+
+.clear-btn {
+  width: auto;
+  padding: 6px 12px;
+  background: #ff4444;
+  font-size: 12px;
+}
+
+.clear-btn:hover {
+  background: #cc0000;
+}
+
+.channel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.channel-item {
+  background: #f8f9fa;
+  padding: 12px;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.channel-item:hover {
+  border-color: #ff0000;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.1);
+}
+
+.channel-item-info {
+  flex: 1;
+}
+
+.channel-item-name {
+  font-weight: bold;
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 3px;
+}
+
+.channel-item-handle {
+  font-size: 11px;
+  color: #666;
+}
+
+.channel-item-date {
+  font-size: 10px;
+  color: #999;
+  margin-top: 3px;
+}
+
+.remove-btn {
+  width: auto;
+  padding: 6px 12px;
+  background: #ff4444;
+  font-size: 11px;
+  margin-left: 10px;
+}
+
+.remove-btn:hover {
+  background: #cc0000;
+}
+
+footer {
+  background: #f8f9fa;
+  padding: 15px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.tip {
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* Scrollbar styling */
+.highlighted-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.highlighted-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.highlighted-list::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 3px;
+}
+
+.highlighted-list::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+#channelCount {
+  color: #ff0000;
+  font-weight: bold;
+}

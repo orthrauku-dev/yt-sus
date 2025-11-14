@@ -1,0 +1,34 @@
+/* Styles for highlighted YouTube channels */
+
+.yt-highlighted-channel {
+  background-color: rgba(255, 0, 0, 0.15) !important;
+  border: 2px solid red !important;
+  border-radius: 4px !important;
+  transition: all 0.3s ease !important;
+}
+
+.yt-highlighted-channel:hover {
+  background-color: rgba(255, 0, 0, 0.25) !important;
+  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.3) !important;
+}
+
+/* Ensure highlighting works on various YouTube elements */
+ytd-video-renderer.yt-highlighted-channel,
+ytd-grid-video-renderer.yt-highlighted-channel,
+ytd-compact-video-renderer.yt-highlighted-channel,
+ytd-channel-renderer.yt-highlighted-channel {
+  background-color: rgba(255, 0, 0, 0.15) !important;
+  border: 2px solid red !important;
+  border-radius: 8px !important;
+  padding: 4px !important;
+  margin: 2px !important;
+}
+
+/* Highlight channel header on channel pages */
+#channel-header.yt-highlighted-channel,
+ytd-c4-tabbed-header-renderer.yt-highlighted-channel {
+  background-color: rgba(255, 0, 0, 0.15) !important;
+  border: 3px solid red !important;
+  border-radius: 8px !important;
+  padding: 8px !important;
+}

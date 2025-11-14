@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Channel Highlighter</title>
+  <link rel="stylesheet" href="popup-styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔴 Channel Highlighter</h1>
+      <p class="subtitle">Highlight YouTube channels in red</p>
+    </header>
+
+    <div class="current-channel" id="currentChannel">
+      <h2>Current Channel</h2>
+      <div id="channelInfo">
+        <p class="info-text">Visit a YouTube channel to highlight it</p>
+      </div>
+      <button id="toggleButton" disabled>Toggle Highlight</button>
+    </div>
+
+    <div class="highlighted-list">
+      <div class="list-header">
+        <h2>Highlighted Channels (<span id="channelCount">0</span>)</h2>
+        <button id="clearAllBtn" class="clear-btn">Clear All</button>
+      </div>
+      <div id="channelList" class="channel-list">
+        <p class="info-text">No channels highlighted yet</p>
+      </div>
+    </div>
+
+    <footer>
+      <p class="tip">💡 Tip: Click on any channel link on YouTube, then use this popup to highlight it!</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
