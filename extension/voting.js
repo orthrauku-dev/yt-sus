@@ -4,6 +4,18 @@ console.log('YouTube Voting System loaded');
 // Storage key for votes
 const VOTES_STORAGE_KEY = 'channelVotes';
 
+// Settings
+let votingEnabled = true;
+
+// Load settings
+async function loadVotingSettings() {
+  const result = await chrome.storage.local.get(['warningSettings']);
+  if (result.warningSettings && result.warningSettings.showVoting !== undefined) {
+    votingEnabled = result.warningSettings.showVoting;
+  }
+  console.log('Voting enabled:', votingEnabled);
+}
+
 // Get all votes from storage
 async function getVotes() {
   const result = await chrome.storage.local.get([VOTES_STORAGE_KEY]);
@@ -49,6 +61,12 @@ function markAsVoted(channelId) {
 
 // Create and add voting button to channel header
 async function addVotingButton() {
+  // Check if voting is enabled
+  if (!votingEnabled) {
+    removeVotingButton();
+    return;
+  }
+  
   // Check if we're on a channel page
   const channelId = extractChannelIdFromPage();
   if (!channelId) {
@@ -144,6 +162,15 @@ async function addVotingButton() {
   console.log(`Vote button added for channel ${channelId} with ${voteCount} votes`);
 }
 
+// Remove voting button
+function removeVotingButton() {
+  const existingButton = document.querySelector('.yt-ai-vote-button');
+  if (existingButton) {
+    existingButton.remove();
+    console.log('Vote button removed');
+  }
+}
+
 // Show visual feedback when voting
 function showVoteFeedback(button) {
   // Add a pulse animation
@@ -204,7 +231,10 @@ function extractChannelIdFromPage() {
 }
 
 // Initialize voting system when on channel page
-function initVoting() {
+async function initVoting() {
+  // Load settings
+  await loadVotingSettings();
+  
   // Only run on channel pages
   if (!window.location.pathname.match(/\/@|\/channel\/|\/c\/|\/user\//)) {
     return;
@@ -220,6 +250,23 @@ function initVoting() {
     addVotingButton();
   }, 2000);
 }
+
+// Listen for settings updates
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'updateSettings') {
+    votingEnabled = request.settings.showVoting;
+    console.log('Voting setting updated:', votingEnabled);
+    
+    if (votingEnabled) {
+      addVotingButton();
+    } else {
+      removeVotingButton();
+    }
+    
+    sendResponse({ success: true });
+  }
+  return true;
+});
 
 // Re-initialize when URL changes (YouTube SPA)
 let lastVotingUrl = location.href;

@@ -8,7 +8,8 @@ let highlightedChannels = {};
 let settings = {
   showVideoTitle: true,
   showChannelHeader: true,
-  showSidebar: true
+  showSidebar: true,
+  showVoting: true
 };
 
 // DOM elements
@@ -20,6 +21,7 @@ const clearAllBtn = document.getElementById('clearAllBtn');
 const toggleVideoTitle = document.getElementById('toggleVideoTitle');
 const toggleChannelHeader = document.getElementById('toggleChannelHeader');
 const toggleSidebar = document.getElementById('toggleSidebar');
+const toggleVoting = document.getElementById('toggleVoting');
 
 // Initialize popup
 async function init() {
@@ -40,6 +42,7 @@ async function init() {
   toggleVideoTitle.addEventListener('change', handleSettingChange);
   toggleChannelHeader.addEventListener('change', handleSettingChange);
   toggleSidebar.addEventListener('change', handleSettingChange);
+  toggleVoting.addEventListener('change', handleSettingChange);
 }
 
 // Load settings from storage
@@ -53,6 +56,7 @@ async function loadSettings() {
   toggleVideoTitle.checked = settings.showVideoTitle;
   toggleChannelHeader.checked = settings.showChannelHeader;
   toggleSidebar.checked = settings.showSidebar;
+  toggleVoting.checked = settings.showVoting;
   
   console.log('Loaded settings:', settings);
 }
