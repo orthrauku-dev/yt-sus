@@ -5,6 +5,11 @@ let currentChannelId = null;
 let currentChannelName = null;
 let currentChannelHandle = null;
 let highlightedChannels = {};
+let settings = {
+  showVideoTitle: true,
+  showChannelHeader: true,
+  showSidebar: true
+};
 
 // DOM elements
 const channelInfo = document.getElementById('channelInfo');
@@ -12,10 +17,16 @@ const toggleButton = document.getElementById('toggleButton');
 const channelList = document.getElementById('channelList');
 const channelCount = document.getElementById('channelCount');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const toggleVideoTitle = document.getElementById('toggleVideoTitle');
+const toggleChannelHeader = document.getElementById('toggleChannelHeader');
+const toggleSidebar = document.getElementById('toggleSidebar');
 
 // Initialize popup
 async function init() {
   console.log('Initializing popup...');
+  
+  // Load settings
+  await loadSettings();
   
   // Load highlighted channels
   await loadHighlightedChannels();
@@ -26,6 +37,48 @@ async function init() {
   // Set up event listeners
   toggleButton.addEventListener('click', handleToggle);
   clearAllBtn.addEventListener('click', handleClearAll);
+  toggleVideoTitle.addEventListener('change', handleSettingChange);
+  toggleChannelHeader.addEventListener('change', handleSettingChange);
+  toggleSidebar.addEventListener('change', handleSettingChange);
+}
+
+// Load settings from storage
+async function loadSettings() {
+  const result = await chrome.storage.local.get(['warningSettings']);
+  if (result.warningSettings) {
+    settings = result.warningSettings;
+  }
+  
+  // Update checkboxes
+  toggleVideoTitle.checked = settings.showVideoTitle;
+  toggleChannelHeader.checked = settings.showChannelHeader;
+  toggleSidebar.checked = settings.showSidebar;
+  
+  console.log('Loaded settings:', settings);
+}
+
+// Handle setting toggle change
+async function handleSettingChange(e) {
+  const settingName = e.target.id.replace('toggle', '').charAt(0).toLowerCase() + 
+                      e.target.id.replace('toggle', '').slice(1);
+  
+  settings[`show${e.target.id.replace('toggle', '')}`] = e.target.checked;
+  
+  // Save settings
+  await chrome.storage.local.set({ warningSettings: settings });
+  
+  // Notify content script to update
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab && tab.url && tab.url.includes('youtube.com')) {
+    chrome.tabs.sendMessage(tab.id, { 
+      action: 'updateSettings', 
+      settings: settings 
+    }).catch(() => {
+      // Ignore errors if content script isn't loaded
+    });
+  }
+  
+  console.log('Settings updated:', settings);
 }
 
 // Load highlighted channels from storage

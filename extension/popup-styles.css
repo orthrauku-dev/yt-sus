@@ -36,6 +36,51 @@ header h1 {
   opacity: 0.9;
 }
 
+.settings-section {
+  padding: 20px;
+  border-bottom: 2px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.settings-section h2 {
+  font-size: 16px;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+.toggle-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.toggle-item:hover {
+  background: #f0f0f0;
+}
+
+.toggle-item input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  margin-right: 12px;
+  accent-color: #ff9800;
+}
+
+.toggle-label {
+  font-size: 14px;
+  color: #333;
+  user-select: none;
+}
+
 .current-channel {
   padding: 20px;
   border-bottom: 2px solid #f0f0f0;

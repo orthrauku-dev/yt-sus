@@ -2,12 +2,25 @@
 console.log('YouTube AI Content Warning content script loaded');
 
 let highlightedChannels = {};
+let settings = {
+  showVideoTitle: true,
+  showChannelHeader: true,
+  showSidebar: true
+};
 
-// Initialize by loading highlighted channels
+// Initialize by loading highlighted channels and settings
 async function init() {
   const response = await chrome.runtime.sendMessage({ action: 'getHighlightedChannels' });
   highlightedChannels = response.channels || {};
   console.log('Loaded highlighted channels:', highlightedChannels);
+  
+  // Load settings
+  const settingsResult = await chrome.storage.local.get(['warningSettings']);
+  if (settingsResult.warningSettings) {
+    settings = settingsResult.warningSettings;
+  }
+  console.log('Loaded settings:', settings);
+  
   applyHighlights();
   
   // Set up observer to watch for dynamic content
@@ -110,46 +123,58 @@ function applyHighlights() {
 
 // Check if we're on a video page and add warning to title if channel is highlighted
 function checkVideoPage() {
-  // Find video owner channel link
-  const ownerLink = document.querySelector('ytd-watch-metadata a.yt-simple-endpoint[href*="/@"], ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]');
-  
-  if (ownerLink) {
-    const channelId = extractChannelId(ownerLink.href);
-    console.log('Video page - Channel ID:', channelId);
+  // Check if video title warnings are enabled
+  if (settings.showVideoTitle) {
+    // Find video owner channel link
+    const ownerLink = document.querySelector('ytd-watch-metadata a.yt-simple-endpoint[href*="/@"], ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]');
     
-    if (channelId && highlightedChannels[channelId]) {
-      console.log('Video is from highlighted channel, adding warning to title');
+    if (ownerLink) {
+      const channelId = extractChannelId(ownerLink.href);
+      console.log('Video page - Channel ID:', channelId);
       
-      // Find the video title
-      const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
-      
-      if (videoTitle && !videoTitle.querySelector('.yt-ai-warning')) {
-        const warning = document.createElement('span');
-        warning.className = 'yt-ai-warning';
-        warning.innerHTML = ' ⚠️ May contain AI';
-        warning.title = 'This channel may use AI-generated content';
-        warning.style.color = '#ff8800';
-        warning.style.fontWeight = 'bold';
-        warning.style.marginLeft = '12px';
-        warning.style.fontSize = '0.9em';
-        warning.style.display = 'inline-block';
-        warning.style.whiteSpace = 'nowrap';
-        warning.style.padding = '4px 8px';
-        warning.style.backgroundColor = 'rgba(255, 136, 0, 0.15)';
-        warning.style.borderRadius = '4px';
-        warning.style.border = '1px solid rgba(255, 136, 0, 0.4)';
+      if (channelId && highlightedChannels[channelId]) {
+        console.log('Video is from highlighted channel, adding warning to title');
         
-        videoTitle.appendChild(warning);
-        console.log('Warning added to video title');
-      }
-    } else {
-      // Remove warning if channel is no longer highlighted
-      const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
-      if (videoTitle) {
-        const existingWarning = videoTitle.querySelector('.yt-ai-warning');
-        if (existingWarning) {
-          existingWarning.remove();
+        // Find the video title
+        const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
+        
+        if (videoTitle && !videoTitle.querySelector('.yt-ai-warning')) {
+          const warning = document.createElement('span');
+          warning.className = 'yt-ai-warning';
+          warning.innerHTML = ' ⚠️ May contain AI';
+          warning.title = 'This channel may use AI-generated content';
+          warning.style.color = '#ff8800';
+          warning.style.fontWeight = 'bold';
+          warning.style.marginLeft = '12px';
+          warning.style.fontSize = '0.9em';
+          warning.style.display = 'inline-block';
+          warning.style.whiteSpace = 'nowrap';
+          warning.style.padding = '4px 8px';
+          warning.style.backgroundColor = 'rgba(255, 136, 0, 0.15)';
+          warning.style.borderRadius = '4px';
+          warning.style.border = '1px solid rgba(255, 136, 0, 0.4)';
+          
+          videoTitle.appendChild(warning);
+          console.log('Warning added to video title');
         }
+      } else {
+        // Remove warning if channel is no longer highlighted
+        const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
+        if (videoTitle) {
+          const existingWarning = videoTitle.querySelector('.yt-ai-warning');
+          if (existingWarning) {
+            existingWarning.remove();
+          }
+        }
+      }
+    }
+  } else {
+    // Remove warning if setting is disabled
+    const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
+    if (videoTitle) {
+      const existingWarning = videoTitle.querySelector('.yt-ai-warning');
+      if (existingWarning) {
+        existingWarning.remove();
       }
     }
   }
@@ -218,6 +243,12 @@ function observeSidebarChanges() {
 // Add warnings to channel names in sidebar/related videos
 let isProcessingSidebar = false;
 function addWarningsToSidebarVideos() {
+  // Check if sidebar warnings are enabled
+  if (!settings.showSidebar) {
+    console.log('Sidebar warnings disabled');
+    return;
+  }
+  
   if (isProcessingSidebar) {
     console.log('Already processing sidebar, skipping...');
     return;
@@ -354,6 +385,20 @@ function addWarningsToSidebarVideos() {
 
 // Highlight an element with warning emoji
 function highlightElement(element) {
+  // Check if channel header warnings are enabled
+  if (!settings.showChannelHeader) {
+    // Remove existing highlights if setting is off
+    element.classList.remove('yt-highlighted-channel');
+    const existingWarning = element.querySelector('.yt-ai-warning');
+    if (existingWarning) {
+      existingWarning.remove();
+    }
+    element.style.backgroundColor = '';
+    element.style.border = '';
+    console.log('Channel header warnings disabled, removed highlights');
+    return;
+  }
+  
   element.classList.add('yt-highlighted-channel');
   
   console.log('highlightElement called on:', element);
@@ -501,6 +546,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'highlightChannel') {
     const { channelId } = request;
     highlightedChannels[channelId] = true;
+    applyHighlights();
+    sendResponse({ success: true });
+  }
+  
+  if (request.action === 'updateSettings') {
+    settings = request.settings || settings;
+    console.log('Settings updated:', settings);
+    // Re-apply all highlights with new settings
     applyHighlights();
     sendResponse({ success: true });
   }
