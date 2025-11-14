@@ -19,16 +19,7 @@
   right: 4px !important;
   font-size: 24px !important;
   z-index: 9999 !important;
-  background: rgba(255, 255, 255, 0.95) !important;
-  border-radius: 50% !important;
-  width: 36px !important;
-  height: 36px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
   cursor: help !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-  animation: pulse-warning 2s infinite !important;
   pointer-events: none !important;
 }
 
@@ -53,17 +44,6 @@
 .yt-ai-label:hover {
   background: rgba(255, 165, 0, 0.3) !important;
   border-color: rgba(255, 165, 0, 0.7) !important;
-}
-
-@keyframes pulse-warning {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.1);
-    opacity: 0.9;
-  }
 }
 
 /* Ensure highlighting works on various YouTube elements */

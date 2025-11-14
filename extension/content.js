@@ -47,43 +47,53 @@ function extractChannelName(element) {
 // Apply highlights to channel elements
 function applyHighlights() {
   console.log('Applying highlights...');
+  console.log('Highlighted channels:', highlightedChannels);
   
-  // Find all channel links on the page
-  const channelLinks = document.querySelectorAll('a[href*="/channel/"], a[href*="/@"], a[href*="/c/"], a[href*="/user/"]');
+  // Try multiple selectors for channel header (YouTube changes their structure)
+  const selectors = [
+    '#channel-header',
+    'ytd-c4-tabbed-header-renderer',
+    'ytd-page-header-renderer',
+    '#page-header',
+    'yt-page-header-renderer',
+    '.page-header-view-model-wiz'
+  ];
   
-  channelLinks.forEach(link => {
-    const channelId = extractChannelId(link.href);
-    if (!channelId) return;
-    
-    if (highlightedChannels[channelId]) {
-      highlightElement(link);
-      
-      // Also highlight parent containers for better visibility
-      const videoRenderer = link.closest('ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-channel-renderer');
-      if (videoRenderer) {
-        highlightElement(videoRenderer);
-      }
-    } else {
-      unhighlightElement(link);
-      const videoRenderer = link.closest('ytd-video-renderer, ytd-grid-video-renderer, ytd-compact-video-renderer, ytd-channel-renderer');
-      if (videoRenderer) {
-        unhighlightElement(videoRenderer);
-      }
+  let channelHeader = null;
+  for (const selector of selectors) {
+    channelHeader = document.querySelector(selector);
+    if (channelHeader) {
+      console.log('Channel header found with selector:', selector);
+      break;
     }
-  });
+  }
   
-  // Highlight channel headers on channel pages
-  const channelHeader = document.querySelector('#channel-header, ytd-c4-tabbed-header-renderer');
+  console.log('Channel header element found:', channelHeader);
+  
   if (channelHeader) {
     const channelLink = channelHeader.querySelector('a[href*="/channel/"], a[href*="/@"]');
+    console.log('Channel link found:', channelLink);
+    console.log('Channel link href:', channelLink?.href);
+    
     if (channelLink) {
       const channelId = extractChannelId(channelLink.href);
+      console.log('Extracted channel ID:', channelId);
+      console.log('Is highlighted?:', highlightedChannels[channelId]);
+      
       if (channelId && highlightedChannels[channelId]) {
+        console.log('CALLING highlightElement for channel:', channelId);
         highlightElement(channelHeader);
       } else {
+        console.log('Channel not in highlighted list or no ID found');
         unhighlightElement(channelHeader);
       }
+    } else {
+      console.log('No channel link found in header');
     }
+  } else {
+    console.log('No channel header found - might not be on a channel page');
+    console.log('Page URL:', window.location.href);
+    console.log('Available elements:', document.querySelectorAll('[id*="header"], [class*="header"]').length);
   }
 }
 
@@ -91,52 +101,73 @@ function applyHighlights() {
 function highlightElement(element) {
   element.classList.add('yt-highlighted-channel');
   
+  console.log('highlightElement called on:', element);
+  console.log('Element HTML:', element.innerHTML.substring(0, 200));
+  
   // Don't add duplicate warnings
   if (element.querySelector('.yt-ai-warning')) {
+    console.log('Warning already exists, skipping');
     return;
   }
   
-  // Create warning badge (positioned in top-right corner)
-  const warningBadge = document.createElement('div');
-  warningBadge.className = 'yt-ai-warning';
-  warningBadge.innerHTML = '⚠️';
-  warningBadge.title = 'Warning: This channel may use AI-generated content';
+  // Try multiple selectors to find channel name
+  const selectors = [
+    'span.yt-core-attributed-string[role="text"]',
+    '.yt-core-attributed-string',
+    '#channel-name',
+    'yt-formatted-string#text',
+    '#text'
+  ];
   
-  // Position the badge
-  element.style.position = 'relative';
-  element.appendChild(warningBadge);
-  
-  // Add warning label next to channel name
-  const channelNameElement = element.querySelector('#channel-name, #text, .yt-simple-endpoint.style-scope.yt-formatted-string, yt-formatted-string#text');
-  if (channelNameElement && !element.querySelector('.yt-ai-label')) {
-    const label = document.createElement('span');
-    label.className = 'yt-ai-label';
-    label.innerHTML = ' ⚠️ <span style="font-size: 0.85em;">May contain AI</span>';
-    label.title = 'This channel may contain AI-generated content';
-    
-    // Insert after the channel name element
-    channelNameElement.parentNode.insertBefore(label, channelNameElement.nextSibling);
+  let channelNameSpan = null;
+  for (const selector of selectors) {
+    channelNameSpan = element.querySelector(selector);
+    if (channelNameSpan) {
+      console.log('Found channel name with selector:', selector);
+      console.log('Channel name element:', channelNameSpan);
+      console.log('Channel name text:', channelNameSpan.textContent);
+      break;
+    }
   }
   
-  // Add subtle highlight
-  element.style.backgroundColor = 'rgba(255, 165, 0, 0.1)';
+  if (channelNameSpan) {
+    const warning = document.createElement('span');
+    warning.className = 'yt-ai-warning';
+    warning.innerHTML = ' ⚠️ May contain AI';
+    warning.title = 'This channel may use AI-generated content';
+    warning.style.color = '#ff8800';
+    warning.style.fontWeight = 'bold';
+    warning.style.marginLeft = '12px';
+    warning.style.fontSize = '1em';
+    warning.style.display = 'inline-block';
+    warning.style.whiteSpace = 'nowrap';
+    warning.style.padding = '4px 8px';
+    warning.style.backgroundColor = 'rgba(255, 136, 0, 0.15)';
+    warning.style.borderRadius = '4px';
+    warning.style.border = '1px solid rgba(255, 136, 0, 0.4)';
+    
+    // Insert right after the channel name span
+    channelNameSpan.insertAdjacentElement('afterend', warning);
+    console.log('Warning inserted successfully');
+  } else {
+    console.log('Could not find channel name element. Element structure:', element.outerHTML.substring(0, 500));
+  }
+  
+  // Add subtle background highlight
+  element.style.backgroundColor = 'rgba(255, 165, 0, 0.15)';
+  element.style.border = '2px solid orange';
   element.style.transition = 'all 0.3s ease';
+  console.log('Background highlight applied');
 }
 
 // Remove highlight from an element
 function unhighlightElement(element) {
   element.classList.remove('yt-highlighted-channel');
   
-  // Remove warning badge
-  const badge = element.querySelector('.yt-ai-warning');
-  if (badge) {
-    badge.remove();
-  }
-  
-  // Remove text label
-  const label = element.querySelector('.yt-ai-label');
-  if (label) {
-    label.remove();
+  // Remove warning
+  const warning = element.querySelector('.yt-ai-warning');
+  if (warning) {
+    warning.remove();
   }
   
   // Reset styles
