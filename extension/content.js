@@ -192,7 +192,8 @@ function observeSidebarChanges() {
     // Ignore mutations from our own warning additions
     const isOurChange = mutations.some(mutation => 
       Array.from(mutation.addedNodes).some(node => 
-        node.className === 'yt-ai-warning-sidebar' ||
+        (node.classList && node.classList.contains('yt-ai-warning-sidebar')) ||
+        (node.className && typeof node.className === 'string' && node.className.includes('yt-ai-warning-sidebar')) ||
         (node.querySelector && node.querySelector('.yt-ai-warning-sidebar'))
       )
     );
@@ -260,7 +261,10 @@ function addWarningsToSidebarVideos() {
       return;
     }
     
-    const channelName = channelNameElement.textContent.trim();
+    // Get channel name, excluding any warning text that might already be there
+    let channelName = channelNameElement.textContent.trim();
+    // Remove any existing warning text
+    channelName = channelName.replace(/\s*⚠️\s*AI\s*$/, '').trim();
     
     if (index === 0) {
       console.log('First video channel name:', channelName);
@@ -428,23 +432,52 @@ function unhighlightElement(element) {
 // Observe page changes (YouTube is a SPA)
 function observePageChanges() {
   const observer = new MutationObserver((mutations) => {
-    // Ignore mutations from our own warning additions
-    const isOurChange = mutations.some(mutation => 
-      Array.from(mutation.addedNodes).some(node => 
-        (node.className && (node.className.includes('yt-ai-warning') || node.className.includes('yt-highlighted-channel'))) ||
-        (node.querySelector && (node.querySelector('.yt-ai-warning-sidebar') || node.querySelector('.yt-ai-warning')))
-      )
-    );
-    
-    if (isOurChange) {
-      return; // Don't trigger on our own changes
+    try {
+      // Ignore mutations from our own warning additions
+      const isOurChange = mutations.some(mutation => 
+        Array.from(mutation.addedNodes).some(node => {
+          if (!node) return false;
+          
+          // Check classList first (most reliable)
+          if (node.classList && (node.classList.contains('yt-ai-warning-sidebar') || node.classList.contains('yt-ai-warning') || node.classList.contains('yt-highlighted-channel'))) {
+            return true;
+          }
+          
+          // Check className only if it's a string
+          if (node.className && typeof node.className === 'string') {
+            if (node.className.includes('yt-ai-warning') || node.className.includes('yt-highlighted-channel')) {
+              return true;
+            }
+          }
+          
+          // Check if it contains warning elements
+          if (node.querySelector) {
+            try {
+              if (node.querySelector('.yt-ai-warning-sidebar') || node.querySelector('.yt-ai-warning')) {
+                return true;
+              }
+            } catch (e) {
+              // Ignore querySelector errors
+            }
+          }
+          
+          return false;
+        })
+      );
+      
+      if (isOurChange) {
+        return; // Don't trigger on our own changes
+      }
+      
+      // Debounce the highlight application
+      clearTimeout(window.highlightTimeout);
+      window.highlightTimeout = setTimeout(() => {
+        applyHighlights();
+      }, 500);
+    } catch (error) {
+      // Silently ignore errors in observer
+      console.log('Observer error (ignored):', error.message);
     }
-    
-    // Debounce the highlight application
-    clearTimeout(window.highlightTimeout);
-    window.highlightTimeout = setTimeout(() => {
-      applyHighlights();
-    }, 500);
   });
   
   observer.observe(document.body, {
