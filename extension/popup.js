@@ -81,10 +81,10 @@ async function getCurrentChannelInfo() {
     toggleButton.disabled = false;
     
     if (isHighlighted) {
-      toggleButton.textContent = '✓ Remove Highlight';
+      toggleButton.textContent = '✓ Remove Warning';
       toggleButton.classList.add('highlighted');
     } else {
-      toggleButton.textContent = '+ Add Highlight';
+      toggleButton.textContent = '⚠️ Add Warning';
       toggleButton.classList.remove('highlighted');
     }
     
@@ -141,10 +141,10 @@ async function handleToggle() {
       
       // Update button
       if (response.highlighted) {
-        toggleButton.textContent = '✓ Remove Highlight';
+        toggleButton.textContent = '✓ Remove Warning';
         toggleButton.classList.add('highlighted');
       } else {
-        toggleButton.textContent = '+ Add Highlight';
+        toggleButton.textContent = '⚠️ Add Warning';
         toggleButton.classList.remove('highlighted');
       }
       
@@ -159,7 +159,7 @@ async function handleToggle() {
 
 // Handle clear all button click
 async function handleClearAll() {
-  if (!confirm('Are you sure you want to remove all highlighted channels?')) {
+  if (!confirm('Are you sure you want to remove all AI content warnings?')) {
     return;
   }
   
@@ -190,9 +190,9 @@ function updateChannelList() {
     return `
       <div class="channel-item" data-channel-id="${escapeHtml(channel.id)}">
         <div class="channel-item-info">
-          <div class="channel-item-name">${escapeHtml(channel.name)}</div>
+          <div class="channel-item-name">⚠️ ${escapeHtml(channel.name)}</div>
           <div class="channel-item-handle">${escapeHtml(channel.handle || channel.id)}</div>
-          <div class="channel-item-date">Added: ${date}</div>
+          <div class="channel-item-date">Marked: ${date}</div>
         </div>
         <button class="remove-btn" data-channel-id="${escapeHtml(channel.id)}">Remove</button>
       </div>

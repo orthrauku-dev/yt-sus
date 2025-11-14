@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Channel Highlighter",
+  "name": "YouTube AI Content Warning",
   "version": "1.0.0",
-  "description": "Highlight YouTube channels in red with a simple click",
+  "description": "Mark YouTube channels that may use AI-generated content with warning indicators",
   "permissions": [
     "storage",
     "activeTab"

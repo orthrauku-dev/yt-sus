@@ -1,15 +1,69 @@
-/* Styles for highlighted YouTube channels */
+/* Styles for AI-warned YouTube channels */
 
 .yt-highlighted-channel {
-  background-color: rgba(255, 0, 0, 0.15) !important;
-  border: 2px solid red !important;
+  background-color: rgba(255, 165, 0, 0.1) !important;
   border-radius: 4px !important;
   transition: all 0.3s ease !important;
+  position: relative !important;
 }
 
 .yt-highlighted-channel:hover {
-  background-color: rgba(255, 0, 0, 0.25) !important;
-  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.3) !important;
+  background-color: rgba(255, 165, 0, 0.2) !important;
+  box-shadow: 0 2px 8px rgba(255, 165, 0, 0.3) !important;
+}
+
+/* Warning emoji badge - top right corner */
+.yt-ai-warning {
+  position: absolute !important;
+  top: 4px !important;
+  right: 4px !important;
+  font-size: 24px !important;
+  z-index: 9999 !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-radius: 50% !important;
+  width: 36px !important;
+  height: 36px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: help !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+  animation: pulse-warning 2s infinite !important;
+  pointer-events: none !important;
+}
+
+/* Warning text label - appears next to channel name */
+.yt-ai-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  margin-left: 8px !important;
+  padding: 2px 8px !important;
+  background: rgba(255, 165, 0, 0.2) !important;
+  border: 1px solid rgba(255, 165, 0, 0.5) !important;
+  border-radius: 4px !important;
+  color: #ff8800 !important;
+  font-size: 0.85em !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  cursor: help !important;
+  vertical-align: middle !important;
+}
+
+.yt-ai-label:hover {
+  background: rgba(255, 165, 0, 0.3) !important;
+  border-color: rgba(255, 165, 0, 0.7) !important;
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.9;
+  }
 }
 
 /* Ensure highlighting works on various YouTube elements */
@@ -17,18 +71,42 @@ ytd-video-renderer.yt-highlighted-channel,
 ytd-grid-video-renderer.yt-highlighted-channel,
 ytd-compact-video-renderer.yt-highlighted-channel,
 ytd-channel-renderer.yt-highlighted-channel {
-  background-color: rgba(255, 0, 0, 0.15) !important;
-  border: 2px solid red !important;
+  background-color: rgba(255, 165, 0, 0.1) !important;
   border-radius: 8px !important;
   padding: 4px !important;
   margin: 2px !important;
 }
 
+/* Warning badge positioning for different layouts */
+ytd-video-renderer .yt-ai-warning,
+ytd-grid-video-renderer .yt-ai-warning {
+  top: 8px !important;
+  right: 8px !important;
+}
+
+ytd-compact-video-renderer .yt-ai-warning {
+  top: 4px !important;
+  right: 4px !important;
+  font-size: 20px !important;
+  width: 30px !important;
+  height: 30px !important;
+}
+
 /* Highlight channel header on channel pages */
 #channel-header.yt-highlighted-channel,
 ytd-c4-tabbed-header-renderer.yt-highlighted-channel {
-  background-color: rgba(255, 0, 0, 0.15) !important;
-  border: 3px solid red !important;
+  background-color: rgba(255, 165, 0, 0.15) !important;
   border-radius: 8px !important;
   padding: 8px !important;
+  border: 2px solid rgba(255, 165, 0, 0.5) !important;
+}
+
+/* Channel header warning badge */
+#channel-header .yt-ai-warning,
+ytd-c4-tabbed-header-renderer .yt-ai-warning {
+  top: 16px !important;
+  right: 16px !important;
+  font-size: 32px !important;
+  width: 48px !important;
+  height: 48px !important;
 }

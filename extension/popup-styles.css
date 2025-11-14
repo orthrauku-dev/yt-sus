@@ -19,7 +19,7 @@ body {
 }
 
 header {
-  background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+  background: linear-gradient(135deg, #ff9800 0%, #ff6f00 100%);
   color: white;
   padding: 20px;
   text-align: center;
@@ -83,7 +83,7 @@ header h1 {
 button {
   width: 100%;
   padding: 12px 20px;
-  background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+  background: linear-gradient(135deg, #ff9800 0%, #ff6f00 100%);
   color: white;
   border: none;
   border-radius: 6px;
@@ -96,9 +96,9 @@ button {
 }
 
 button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #cc0000 0%, #990000 100%);
+  background: linear-gradient(135deg, #ff6f00 0%, #f57c00 100%);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
 }
 
 button:active:not(:disabled) {
@@ -168,9 +168,9 @@ button.highlighted:hover {
 }
 
 .channel-item:hover {
-  border-color: #ff0000;
+  border-color: #ff9800;
   background: #fff;
-  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgba(255, 152, 0, 0.1);
 }
 
 .channel-item-info {
@@ -239,6 +239,6 @@ footer {
 }
 
 #channelCount {
-  color: #ff0000;
+  color: #ff9800;
   font-weight: bold;
 }

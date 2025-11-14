@@ -1,5 +1,5 @@
 // Content script for YouTube pages
-console.log('YouTube Channel Highlighter content script loaded');
+console.log('YouTube AI Content Warning content script loaded');
 
 let highlightedChannels = {};
 
@@ -80,26 +80,67 @@ function applyHighlights() {
       const channelId = extractChannelId(channelLink.href);
       if (channelId && highlightedChannels[channelId]) {
         highlightElement(channelHeader);
+      } else {
+        unhighlightElement(channelHeader);
       }
     }
   }
 }
 
-// Highlight an element
+// Highlight an element with warning emoji
 function highlightElement(element) {
   element.classList.add('yt-highlighted-channel');
-  element.style.backgroundColor = 'rgba(255, 0, 0, 0.15)';
-  element.style.border = '2px solid red';
-  element.style.borderRadius = '4px';
+  
+  // Don't add duplicate warnings
+  if (element.querySelector('.yt-ai-warning')) {
+    return;
+  }
+  
+  // Create warning badge (positioned in top-right corner)
+  const warningBadge = document.createElement('div');
+  warningBadge.className = 'yt-ai-warning';
+  warningBadge.innerHTML = '⚠️';
+  warningBadge.title = 'Warning: This channel may use AI-generated content';
+  
+  // Position the badge
+  element.style.position = 'relative';
+  element.appendChild(warningBadge);
+  
+  // Add warning label next to channel name
+  const channelNameElement = element.querySelector('#channel-name, #text, .yt-simple-endpoint.style-scope.yt-formatted-string, yt-formatted-string#text');
+  if (channelNameElement && !element.querySelector('.yt-ai-label')) {
+    const label = document.createElement('span');
+    label.className = 'yt-ai-label';
+    label.innerHTML = ' ⚠️ <span style="font-size: 0.85em;">May contain AI</span>';
+    label.title = 'This channel may contain AI-generated content';
+    
+    // Insert after the channel name element
+    channelNameElement.parentNode.insertBefore(label, channelNameElement.nextSibling);
+  }
+  
+  // Add subtle highlight
+  element.style.backgroundColor = 'rgba(255, 165, 0, 0.1)';
   element.style.transition = 'all 0.3s ease';
 }
 
 // Remove highlight from an element
 function unhighlightElement(element) {
   element.classList.remove('yt-highlighted-channel');
+  
+  // Remove warning badge
+  const badge = element.querySelector('.yt-ai-warning');
+  if (badge) {
+    badge.remove();
+  }
+  
+  // Remove text label
+  const label = element.querySelector('.yt-ai-label');
+  if (label) {
+    label.remove();
+  }
+  
+  // Reset styles
   element.style.backgroundColor = '';
-  element.style.border = '';
-  element.style.borderRadius = '';
 }
 
 // Observe page changes (YouTube is a SPA)

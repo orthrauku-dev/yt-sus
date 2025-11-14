@@ -1,5 +1,5 @@
 // Background service worker
-console.log('YouTube Channel Highlighter background script loaded');
+console.log('YouTube AI Content Warning background script loaded');
 
 // Initialize the database when extension is installed
 chrome.runtime.onInstalled.addListener(async () => {
