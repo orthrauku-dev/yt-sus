@@ -121,6 +121,9 @@ function applyHighlights() {
   checkVideoPage();
 }
 
+// Store the current video's channel info for sidebar matching
+let currentVideoChannelName = null;
+
 // Check if we're on a video page and add warning to title if channel is highlighted
 function checkVideoPage() {
   // Check if video title warnings are enabled
@@ -130,7 +133,18 @@ function checkVideoPage() {
     
     if (ownerLink) {
       const channelId = extractChannelId(ownerLink.href);
+      
+      // Get channel name from the stored channel data
+      let channelNameText = '';
+      if (channelId && highlightedChannels[channelId]) {
+        channelNameText = highlightedChannels[channelId].name || '';
+      }
+      
+      // Store the channel name text for sidebar matching
+      currentVideoChannelName = channelNameText;
+      
       console.log('Video page - Channel ID:', channelId);
+      console.log('Video page - Channel Name:', currentVideoChannelName);
       
       if (channelId && highlightedChannels[channelId]) {
         console.log('Video is from highlighted channel, adding warning to title');
@@ -282,12 +296,33 @@ function addWarningsToSidebarVideos() {
   }
   
   sidebarVideos.forEach((video, index) => {
-    // For new view-model structure, get channel name text directly
-    const channelNameElement = video.querySelector('yt-content-metadata-view-model .yt-core-attributed-string');
+    // Try multiple selectors to find channel name (YouTube structure varies)
+    const selectors = [
+      'yt-content-metadata-view-model .yt-core-attributed-string',
+      '.yt-core-attributed-string[role="text"]',
+      'yt-formatted-string.ytd-channel-name',
+      '#channel-name yt-formatted-string',
+      'ytd-channel-name a',
+      '#text.ytd-channel-name',
+      'a.yt-simple-endpoint.yt-formatted-string',
+      '.ytd-video-meta-block #text'
+    ];
+    
+    let channelNameElement = null;
+    for (const selector of selectors) {
+      channelNameElement = video.querySelector(selector);
+      if (channelNameElement && channelNameElement.textContent.trim()) {
+        if (index === 0) {
+          console.log(`Found channel name with selector: ${selector}`);
+        }
+        break;
+      }
+    }
     
     if (!channelNameElement) {
       if (index === 0) {
         console.log('Could not find channel name element in first video');
+        console.log('Video HTML structure:', video.outerHTML.substring(0, 500));
       }
       return;
     }
@@ -299,36 +334,40 @@ function addWarningsToSidebarVideos() {
     
     if (index === 0) {
       console.log('First video channel name:', channelName);
+      console.log('Current video channel name:', currentVideoChannelName);
       console.log('Highlighted channels:', Object.keys(highlightedChannels));
     }
     
     // Check if already processed
     if (video.dataset.aiWarningProcessed === 'true') {
-      return;
+      return; // Skip this specific video, but continue with others
     }
     
-    // Check if this channel is highlighted by name or handle
+    // Simple text matching - if this sidebar video's channel name matches
+    // the current video's channel name, and that channel is highlighted, mark it
     let isHighlighted = false;
     let matchedChannelId = null;
     
-    for (const [channelId, value] of Object.entries(highlightedChannels)) {
-      // Match by handle (e.g., @s0lid_sno0ks matches "sno0ks")
-      if (channelId.startsWith('@')) {
-        const handleWithoutAt = channelId.substring(1).toLowerCase();
-        // Check if channel name matches the handle (with or without underscores)
-        if (channelName.toLowerCase() === handleWithoutAt ||
-            channelName.toLowerCase().replace(/_/g, '') === handleWithoutAt.replace(/_/g, '') ||
-            handleWithoutAt.includes(channelName.toLowerCase())) {
+    // Get the current video's channel ID if we're on a video page
+    const ownerLink = document.querySelector('ytd-watch-metadata a.yt-simple-endpoint[href*="/@"], ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]');
+    if (ownerLink) {
+      const channelId = extractChannelId(ownerLink.href);
+      
+      // Check if current video's channel is highlighted and get the stored name
+      if (channelId && highlightedChannels[channelId]) {
+        const videoChannelName = highlightedChannels[channelId].name || '';
+        
+        // Now check if sidebar video matches this channel name
+        if (channelName === videoChannelName) {
           isHighlighted = true;
           matchedChannelId = channelId;
-          break;
+          
+          if (index === 0) {
+            console.log(`✓ MATCH! Sidebar video from same channel: "${channelName}"`);
+          }
+        } else if (index < 3) {
+          console.log(`✗ No match: "${channelName}" !== "${videoChannelName}"`);
         }
-      }
-      // Also try exact match
-      if (channelName.toLowerCase() === channelId.toLowerCase()) {
-        isHighlighted = true;
-        matchedChannelId = channelId;
-        break;
       }
     }
     
