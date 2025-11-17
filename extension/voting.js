@@ -42,15 +42,19 @@ async function saveVotes(votes) {
   await chrome.storage.local.set({ [VOTES_STORAGE_KEY]: votes });
 }
 
-// Get vote count for a channel from API
+// Get vote count for a channel from API (via background script)
 async function getChannelVotesFromAPI(channelId) {
   try {
-    const response = await fetch(`${API_URL}/check_channel?channelId=${encodeURIComponent(channelId)}`);
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
+    // Use background script to make the API call (avoids CORS issues)
+    const response = await chrome.runtime.sendMessage({
+      action: 'getChannelVotes',
+      channelId: channelId
+    });
+    
+    if (response && response.success) {
+      return response.votes || 0;
     }
-    const data = await response.json();
-    return data.votes || 0;
+    throw new Error('Failed to get votes from background script');
   } catch (error) {
     console.error('Failed to get votes from API:', error);
     // Fall back to local cache
@@ -65,35 +69,29 @@ async function getChannelVotes(channelId) {
   return votes[channelId] || 0;
 }
 
-// Add an upvote for a channel (sends to API)
+// Add an upvote for a channel (sends to API via background script)
 async function upvoteChannel(channelId, channelName) {
   try {
-    // Send vote to API
-    const response = await fetch(`${API_URL}/vote_channel`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        channelId: channelId,
-        channelName: channelName
-      })
+    // Use background script to make the API call (avoids CORS issues)
+    const response = await chrome.runtime.sendMessage({
+      action: 'voteChannel',
+      channelId: channelId,
+      channelName: channelName
     });
     
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
+    if (response && response.success) {
+      const newVotes = response.votes;
+      
+      // Update local cache
+      const votes = await getVotes();
+      votes[channelId] = newVotes;
+      await saveVotes(votes);
+      
+      console.log(`Vote sent to API. Channel ${channelId} now has ${newVotes} votes`);
+      return newVotes;
     }
     
-    const data = await response.json();
-    const newVotes = data.votes;
-    
-    // Update local cache
-    const votes = await getVotes();
-    votes[channelId] = newVotes;
-    await saveVotes(votes);
-    
-    console.log(`Vote sent to API. Channel ${channelId} now has ${newVotes} votes`);
-    return newVotes;
+    throw new Error('Failed to vote via background script');
     
   } catch (error) {
     console.error('Failed to send vote to API, saving locally:', error);
@@ -128,10 +126,12 @@ async function addVotingButton() {
   try {
     console.log('=== addVotingButton called ===');
     
+    // Always remove existing button first to ensure fresh state
+    removeVotingButton();
+    
     // Check if voting is enabled
     if (!votingEnabled) {
-      console.log('Voting is disabled, removing button');
-      removeVotingButton();
+      console.log('Voting is disabled, button removed');
       return;
     }
     
@@ -173,11 +173,8 @@ async function addVotingButton() {
 
 async function createAndInsertButton(actionsContainer, channelId) {
   try {
-    // Check if button already exists
-    if (document.querySelector('.yt-ai-vote-button')) {
-      console.log('Vote button already exists');
-      return;
-    }
+    // Don't check if button exists - we removed it in addVotingButton already
+    console.log('Creating fresh vote button...');
 
     console.log('Fetching vote count from API...');
     // Get current vote count from API
@@ -472,7 +469,9 @@ new MutationObserver(() => {
   if (url !== lastVotingUrl) {
     lastVotingUrl = url;
     console.log('URL changed, re-initializing voting system');
-    setTimeout(initVoting, 500);
+    // Remove old button and wait a bit for DOM to settle
+    removeVotingButton();
+    setTimeout(initVoting, 800);
   }
 }).observe(document, { subtree: true, childList: true });
 

@@ -231,6 +231,72 @@ button.highlighted:hover {
   max-height: 300px;
 }
 
+.highlighted-list > h2 {
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 15px;
+}
+
+.channel-section {
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: #f0f0f0;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s ease;
+  margin-bottom: 10px;
+}
+
+.section-header:hover {
+  background: #e8e8e8;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: #333;
+}
+
+.collapse-icon {
+  font-size: 12px;
+  transition: transform 0.3s ease;
+}
+
+.section-header.collapsed .collapse-icon {
+  transform: rotate(-90deg);
+}
+
+.clear-section-btn {
+  width: auto;
+  padding: 4px 10px;
+  background: #ff4444;
+  font-size: 11px;
+  border: none;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-section-btn:hover {
+  background: #cc0000;
+  transform: translateY(-1px);
+}
+
+.channel-list.collapsed {
+  display: none;
+}
+
 .list-header {
   display: flex;
   justify-content: space-between;

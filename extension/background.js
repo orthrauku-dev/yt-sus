@@ -2,7 +2,8 @@
 console.log('YouTube Sentiment Warning background script loaded');
 
 const API_URL = 'http://localhost:7071/api/flagged_channels';
-// When deploying, change to: 'https://YOUR-FUNCTION-APP.azurewebsites.net/api/flagged_channels'
+const API_BASE_URL = 'http://localhost:7071/api';
+// When deploying, change to: 'https://YOUR-FUNCTION-APP.azurewebsites.net/api'
 
 // Initialize the database when extension is installed
 chrome.runtime.onInstalled.addListener(async () => {
@@ -71,9 +72,14 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
           handle: channelId,
           addedAt: data.flaggedDate || new Date().toISOString(),
           highlighted: true,
+          autoAdded: true,  // API-synced channels are auto-added
           fromAPI: true,
-          reason: data.reason
+          reason: data.reason,
+          votes: data.votes || 0
         };
+      } else {
+        // Update existing channel with vote count
+        mergedChannels[channelId].votes = data.votes || 0;
       }
       
       // Update vote count from API
@@ -206,9 +212,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           name: channelName,
           handle: channelHandle,
           addedAt: new Date().toISOString(),
-          highlighted: true
+          highlighted: true,
+          autoAdded: false  // Manually added
         };
-        console.log('Channel added:', channelId);
+        console.log('Channel added manually:', channelId);
       }
       
       await chrome.storage.local.set({ highlightedChannels: channels });
@@ -234,9 +241,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           handle: channelId,
           addedAt: new Date().toISOString(),
           highlighted: true,
-          addedByVoting: true
+          autoAdded: true  // Auto-added via voting
         };
-        console.log('Channel added via voting:', channelId);
+        console.log('Channel added via voting (auto-added):', channelId);
         
         await chrome.storage.local.set({ highlightedChannels: channels });
         
@@ -259,6 +266,93 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: true });
     });
     return true;
+  }
+  
+  if (request.action === 'clearAutoAdded') {
+    chrome.storage.local.get('highlightedChannels', async (result) => {
+      const channels = result.highlightedChannels || {};
+      const filteredChannels = {};
+      
+      // Keep only manually added channels
+      for (const [id, channel] of Object.entries(channels)) {
+        if (!channel.autoAdded) {
+          filteredChannels[id] = channel;
+        }
+      }
+      
+      await chrome.storage.local.set({ highlightedChannels: filteredChannels });
+      notifyAllTabs(filteredChannels);
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+  
+  if (request.action === 'clearManualAdded') {
+    chrome.storage.local.get('highlightedChannels', async (result) => {
+      const channels = result.highlightedChannels || {};
+      const filteredChannels = {};
+      
+      // Keep only auto-added channels
+      for (const [id, channel] of Object.entries(channels)) {
+        if (channel.autoAdded) {
+          filteredChannels[id] = channel;
+        }
+      }
+      
+      await chrome.storage.local.set({ highlightedChannels: filteredChannels });
+      notifyAllTabs(filteredChannels);
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+  
+  if (request.action === 'getChannelVotes') {
+    // Handle API call from content script to avoid CORS
+    const channelId = request.channelId;
+    fetch(`${API_BASE_URL}/check_channel?channelId=${encodeURIComponent(channelId)}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        sendResponse({ success: true, votes: data.votes || 0 });
+      })
+      .catch(error => {
+        console.error('Failed to get votes from API:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep message channel open for async response
+  }
+  
+  if (request.action === 'voteChannel') {
+    // Handle API call from content script to avoid CORS
+    const { channelId, channelName } = request;
+    fetch(`${API_BASE_URL}/vote_channel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        channelId: channelId,
+        channelName: channelName
+      })
+    })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`API returned ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        sendResponse({ success: true, votes: data.votes || 0 });
+      })
+      .catch(error => {
+        console.error('Failed to vote via API:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Keep message channel open for async response
   }
 });
 

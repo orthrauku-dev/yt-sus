@@ -54,12 +54,34 @@
     </div>
 
     <div class="highlighted-list">
-      <div class="list-header">
-        <h2>Warned Channels (<span id="channelCount">0</span>)</h2>
-        <button id="clearAllBtn" class="clear-btn">Clear All</button>
+      <h2>Warned Channels (<span id="channelCount">0</span>)</h2>
+      
+      <!-- Auto-Added Channels Section -->
+      <div class="channel-section">
+        <div class="section-header" id="autoAddedHeader">
+          <span class="section-title">
+            <span class="collapse-icon">▼</span>
+            Auto-Added (<span id="autoAddedCount">0</span>)
+          </span>
+          <button id="clearAutoBtn" class="clear-section-btn">Clear Auto</button>
+        </div>
+        <div id="autoAddedList" class="channel-list">
+          <p class="info-text">No auto-added channels yet</p>
+        </div>
       </div>
-      <div id="channelList" class="channel-list">
-        <p class="info-text">No channels marked yet</p>
+      
+      <!-- Manually Added Channels Section -->
+      <div class="channel-section">
+        <div class="section-header" id="manualAddedHeader">
+          <span class="section-title">
+            <span class="collapse-icon">▼</span>
+            Manually Added (<span id="manualAddedCount">0</span>)
+          </span>
+          <button id="clearManualBtn" class="clear-section-btn">Clear Manual</button>
+        </div>
+        <div id="manualAddedList" class="channel-list">
+          <p class="info-text">No manually added channels yet</p>
+        </div>
       </div>
     </div>
 

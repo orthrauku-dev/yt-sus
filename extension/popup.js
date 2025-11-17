@@ -15,9 +15,15 @@ let settings = {
 // DOM elements
 const channelInfo = document.getElementById('channelInfo');
 const toggleButton = document.getElementById('toggleButton');
-const channelList = document.getElementById('channelList');
 const channelCount = document.getElementById('channelCount');
-const clearAllBtn = document.getElementById('clearAllBtn');
+const autoAddedList = document.getElementById('autoAddedList');
+const manualAddedList = document.getElementById('manualAddedList');
+const autoAddedCount = document.getElementById('autoAddedCount');
+const manualAddedCount = document.getElementById('manualAddedCount');
+const clearAutoBtn = document.getElementById('clearAutoBtn');
+const clearManualBtn = document.getElementById('clearManualBtn');
+const autoAddedHeader = document.getElementById('autoAddedHeader');
+const manualAddedHeader = document.getElementById('manualAddedHeader');
 const toggleVideoTitle = document.getElementById('toggleVideoTitle');
 const toggleChannelHeader = document.getElementById('toggleChannelHeader');
 const toggleVoting = document.getElementById('toggleVoting');
@@ -46,7 +52,10 @@ async function init() {
   
   // Set up event listeners
   toggleButton.addEventListener('click', handleToggle);
-  clearAllBtn.addEventListener('click', handleClearAll);
+  clearAutoBtn.addEventListener('click', handleClearAuto);
+  clearManualBtn.addEventListener('click', handleClearManual);
+  autoAddedHeader.addEventListener('click', () => toggleSection('auto'));
+  manualAddedHeader.addEventListener('click', () => toggleSection('manual'));
   toggleVideoTitle.addEventListener('change', handleSettingChange);
   toggleChannelHeader.addEventListener('change', handleSettingChange);
   toggleVoting.addEventListener('change', handleVotingToggle);
@@ -59,6 +68,14 @@ async function init() {
 async function loadAPISettings() {
   const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
   toggleAPISync.checked = response.apiSyncEnabled !== false;
+  
+  // Show/hide refresh button based on API sync setting
+  const apiStatus = document.getElementById('apiStatus');
+  if (toggleAPISync.checked) {
+    apiStatus.style.display = 'block';
+  } else {
+    apiStatus.style.display = 'none';
+  }
   
   if (response.lastAPISync) {
     const syncDate = new Date(response.lastAPISync);
@@ -85,10 +102,15 @@ async function handleAPISyncToggle() {
     enabled: enabled 
   });
   
+  // Show/hide refresh button based on toggle state
+  const apiStatus = document.getElementById('apiStatus');
   if (enabled) {
+    apiStatus.style.display = 'block';
     apiStatusText.textContent = 'Syncing...';
     setTimeout(loadAPISettings, 1000);
     setTimeout(loadHighlightedChannels, 1000);
+  } else {
+    apiStatus.style.display = 'none';
   }
 }
 
@@ -313,47 +335,71 @@ async function handleToggle() {
   }
 }
 
-// Handle clear all button click
-async function handleClearAll() {
-  if (!confirm('Are you sure you want to remove all AI content warnings?')) {
+// Handle clear auto button click
+async function handleClearAuto() {
+  if (!confirm('Are you sure you want to remove all auto-added AI content warnings?')) {
     return;
   }
   
   try {
-    await chrome.runtime.sendMessage({ action: 'clearAll' });
+    await chrome.runtime.sendMessage({ action: 'clearAutoAdded' });
     await loadHighlightedChannels();
     await getCurrentChannelInfo();
   } catch (error) {
-    console.error('Error clearing channels:', error);
+    console.error('Error clearing auto-added channels:', error);
   }
+}
+
+// Handle clear manual button click
+async function handleClearManual() {
+  if (!confirm('Are you sure you want to remove all manually added AI content warnings?')) {
+    return;
+  }
+  
+  try {
+    await chrome.runtime.sendMessage({ action: 'clearManualAdded' });
+    await loadHighlightedChannels();
+    await getCurrentChannelInfo();
+  } catch (error) {
+    console.error('Error clearing manually added channels:', error);
+  }
+}
+
+// Toggle section collapse/expand
+function toggleSection(section) {
+  const header = section === 'auto' ? autoAddedHeader : manualAddedHeader;
+  const list = section === 'auto' ? autoAddedList : manualAddedList;
+  
+  header.classList.toggle('collapsed');
+  list.classList.toggle('collapsed');
 }
 
 // Update the channel list display
 function updateChannelList() {
   const channels = Object.values(highlightedChannels);
-  channelCount.textContent = channels.length;
   
-  if (channels.length === 0) {
-    channelList.innerHTML = '<p class="info-text">No channels highlighted yet</p>';
-    return;
+  // Separate auto-added and manually added channels
+  const autoAdded = channels.filter(ch => ch.autoAdded === true);
+  const manualAdded = channels.filter(ch => !ch.autoAdded);
+  
+  // Update counts
+  channelCount.textContent = channels.length;
+  autoAddedCount.textContent = autoAdded.length;
+  manualAddedCount.textContent = manualAdded.length;
+  
+  // Update auto-added list
+  if (autoAdded.length === 0) {
+    autoAddedList.innerHTML = '<p class="info-text">No auto-added channels yet</p>';
+  } else {
+    autoAddedList.innerHTML = renderChannelList(autoAdded);
   }
   
-  // Sort by date added (newest first)
-  channels.sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
-  
-  channelList.innerHTML = channels.map(channel => {
-    const date = new Date(channel.addedAt).toLocaleDateString();
-    return `
-      <div class="channel-item" data-channel-id="${escapeHtml(channel.id)}">
-        <div class="channel-item-info">
-          <div class="channel-item-name">⚠️ ${escapeHtml(channel.name)}</div>
-          <div class="channel-item-handle">${escapeHtml(channel.handle || channel.id)}</div>
-          <div class="channel-item-date">Marked: ${date}</div>
-        </div>
-        <button class="remove-btn" data-channel-id="${escapeHtml(channel.id)}">Remove</button>
-      </div>
-    `;
-  }).join('');
+  // Update manually added list
+  if (manualAdded.length === 0) {
+    manualAddedList.innerHTML = '<p class="info-text">No manually added channels yet</p>';
+  } else {
+    manualAddedList.innerHTML = renderChannelList(manualAdded);
+  }
   
   // Add event listeners to remove buttons
   document.querySelectorAll('.remove-btn').forEach(btn => {
@@ -362,6 +408,27 @@ function updateChannelList() {
       await removeChannel(channelId);
     });
   });
+}
+
+// Render channel list HTML
+function renderChannelList(channels) {
+  // Sort by date added (newest first)
+  channels.sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
+  
+  return channels.map(channel => {
+    const date = new Date(channel.addedAt).toLocaleDateString();
+    const voteText = channel.votes ? ` (${channel.votes} votes)` : '';
+    return `
+      <div class="channel-item" data-channel-id="${escapeHtml(channel.id)}">
+        <div class="channel-item-info">
+          <div class="channel-item-name">⚠️ ${escapeHtml(channel.name)}${voteText}</div>
+          <div class="channel-item-handle">${escapeHtml(channel.handle || channel.id)}</div>
+          <div class="channel-item-date">Marked: ${date}</div>
+        </div>
+        <button class="remove-btn" data-channel-id="${escapeHtml(channel.id)}">Remove</button>
+      </div>
+    `;
+  }).join('');
 }
 
 // Remove a specific channel
