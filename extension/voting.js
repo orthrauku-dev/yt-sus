@@ -413,10 +413,18 @@ function extractChannelIdFromPage() {
 }
 
 // Initialize voting system when on channel page
+let initializationTimeout = null;
+
 async function initVoting() {
   try {
     console.log('Initializing voting system...');
     console.log('Current URL:', window.location.pathname);
+    
+    // Clear any pending initialization
+    if (initializationTimeout) {
+      clearTimeout(initializationTimeout);
+      initializationTimeout = null;
+    }
     
     // Load settings
     await loadVotingSettings();
@@ -429,17 +437,11 @@ async function initVoting() {
     
     console.log('On channel page, will add voting button');
     
-    // Wait for page to load
-    setTimeout(() => {
-      console.log('Attempting to add voting button (1s delay)');
+    // Wait for page to load, then add button once
+    initializationTimeout = setTimeout(() => {
+      console.log('Adding voting button after page load');
       addVotingButton();
-    }, 1000);
-    
-    // Also try again after a delay (for slow loading pages)
-    setTimeout(() => {
-      console.log('Attempting to add voting button again (2s delay)');
-      addVotingButton();
-    }, 2000);
+    }, 1500);
   } catch (error) {
     console.error('Error initializing voting system:', error);
   }
@@ -462,18 +464,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// Re-initialize when URL changes (YouTube SPA)
-let lastVotingUrl = location.href;
-new MutationObserver(() => {
-  const url = location.href;
-  if (url !== lastVotingUrl) {
-    lastVotingUrl = url;
-    console.log('URL changed, re-initializing voting system');
-    // Remove old button and wait a bit for DOM to settle
-    removeVotingButton();
-    setTimeout(initVoting, 800);
+// Re-initialize when URL changes (YouTube SPA navigation)
+// Use YouTube's navigation event instead of MutationObserver to avoid infinite loops
+let navigationTimeout = null;
+document.addEventListener('yt-navigate-finish', () => {
+  console.log('YouTube navigation finished');
+  
+  // Debounce navigation events
+  if (navigationTimeout) {
+    clearTimeout(navigationTimeout);
   }
-}).observe(document, { subtree: true, childList: true });
+  
+  navigationTimeout = setTimeout(() => {
+    console.log('Re-initializing voting system after navigation');
+    removeVotingButton();
+    initVoting();
+  }, 500);
+});
 
 // Initialize on load
 if (document.readyState === 'loading') {
