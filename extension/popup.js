@@ -24,6 +24,9 @@ const toggleVoting = document.getElementById('toggleVoting');
 const votingThreshold = document.getElementById('votingThreshold');
 const thresholdSlider = document.getElementById('thresholdSlider');
 const thresholdValue = document.getElementById('thresholdValue');
+const toggleAPISync = document.getElementById('toggleAPISync');
+const apiStatusText = document.getElementById('apiStatusText');
+const refreshAPIBtn = document.getElementById('refreshAPIBtn');
 
 // Initialize popup
 async function init() {
@@ -31,6 +34,9 @@ async function init() {
   
   // Load settings
   await loadSettings();
+  
+  // Load API settings
+  await loadAPISettings();
   
   // Load highlighted channels
   await loadHighlightedChannels();
@@ -45,6 +51,61 @@ async function init() {
   toggleChannelHeader.addEventListener('change', handleSettingChange);
   toggleVoting.addEventListener('change', handleVotingToggle);
   thresholdSlider.addEventListener('input', handleThresholdChange);
+  toggleAPISync.addEventListener('change', handleAPISyncToggle);
+  refreshAPIBtn.addEventListener('click', handleRefreshAPI);
+}
+
+// Load API settings
+async function loadAPISettings() {
+  const response = await chrome.runtime.sendMessage({ action: 'getSettings' });
+  toggleAPISync.checked = response.apiSyncEnabled !== false;
+  
+  if (response.lastAPISync) {
+    const syncDate = new Date(response.lastAPISync);
+    const now = new Date();
+    const diffMinutes = Math.floor((now - syncDate) / 60000);
+    
+    if (diffMinutes < 1) {
+      apiStatusText.textContent = 'Last synced: Just now';
+    } else if (diffMinutes < 60) {
+      apiStatusText.textContent = `Last synced: ${diffMinutes} min ago`;
+    } else {
+      apiStatusText.textContent = `Last synced: ${Math.floor(diffMinutes / 60)} hours ago`;
+    }
+  } else {
+    apiStatusText.textContent = 'Last synced: Never';
+  }
+}
+
+// Handle API sync toggle
+async function handleAPISyncToggle() {
+  const enabled = toggleAPISync.checked;
+  await chrome.runtime.sendMessage({ 
+    action: 'toggleAPISync', 
+    enabled: enabled 
+  });
+  
+  if (enabled) {
+    apiStatusText.textContent = 'Syncing...';
+    setTimeout(loadAPISettings, 1000);
+    setTimeout(loadHighlightedChannels, 1000);
+  }
+}
+
+// Handle refresh API button
+async function handleRefreshAPI() {
+  refreshAPIBtn.disabled = true;
+  refreshAPIBtn.textContent = 'Syncing...';
+  apiStatusText.textContent = 'Syncing...';
+  
+  await chrome.runtime.sendMessage({ action: 'refreshFromAPI' });
+  
+  setTimeout(async () => {
+    await loadAPISettings();
+    await loadHighlightedChannels();
+    refreshAPIBtn.disabled = false;
+    refreshAPIBtn.textContent = 'Refresh Now';
+  }, 1000);
 }
 
 // Handle voting toggle

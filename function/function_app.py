@@ -46,6 +46,133 @@ def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
              status_code=200
         )
 
+@app.route(route="flagged_channels", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET"])
+def flagged_channels(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Get all flagged AI YouTubers.
+    Returns a simple object with channel IDs as keys for easy lookup in the extension.
+    
+    Example response:
+    {
+        "UCxxxxxxxxxxxx": {
+            "channelName": "AI Channel Name",
+            "flaggedDate": "2025-11-17T12:00:00Z",
+            "reason": "AI Content"
+        },
+        "@channelhandle": {
+            "channelName": "Another AI Channel",
+            "flaggedDate": "2025-11-17T13:00:00Z",
+            "reason": "AI Generated Videos"
+        }
+    }
+    """
+    logging.info('Flagged channels API called')
+    
+    try:
+        table_client = get_table_client('ytsustable')
+        
+        # Query all entities with PartitionKey = "flagged"
+        entities = table_client.query_entities(query_filter="PartitionKey eq 'flagged'")
+        
+        # Convert to the format expected by the extension
+        # Extension expects: { "channelId": {...}, "channelId2": {...} }
+        flagged_channels_dict = {}
+        
+        for entity in entities:
+            channel_id = entity.get('RowKey')
+            if channel_id:
+                flagged_channels_dict[channel_id] = {
+                    'channelName': entity.get('ChannelName', 'Unknown'),
+                    'flaggedDate': entity.get('FlaggedDate', ''),
+                    'reason': entity.get('Reason', 'AI Content')
+                }
+        
+        logging.info(f"Returning {len(flagged_channels_dict)} flagged channels")
+        
+        return func.HttpResponse(
+            json.dumps(flagged_channels_dict, default=str),
+            mimetype="application/json",
+            headers={
+                "Access-Control-Allow-Origin": "*",  # Enable CORS for extension
+                "Access-Control-Allow-Methods": "GET",
+                "Cache-Control": "public, max-age=300"  # Cache for 5 minutes
+            },
+            status_code=200
+        )
+            
+    except Exception as e:
+        logging.error(f"Error reading flagged channels: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({
+                "error": str(e),
+                "type": type(e).__name__
+            }),
+            mimetype="application/json",
+            status_code=500
+        )
+
+@app.route(route="check_channel", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET"])
+def check_channel(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Check if a specific channel is flagged.
+    Usage: /api/check_channel?channelId=UCxxxxxxxxxxxx
+    
+    Returns:
+    {
+        "flagged": true/false,
+        "details": {...} (if flagged)
+    }
+    """
+    logging.info('Check channel API called')
+    
+    channel_id = req.params.get('channelId')
+    if not channel_id:
+        return func.HttpResponse(
+            json.dumps({"error": "channelId parameter is required"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    try:
+        table_client = get_table_client('ytsustable')
+        
+        # Try to get the specific entity
+        try:
+            entity = table_client.get_entity(partition_key='flagged', row_key=channel_id)
+            return func.HttpResponse(
+                json.dumps({
+                    "flagged": True,
+                    "channelId": channel_id,
+                    "details": {
+                        "channelName": entity.get('ChannelName', 'Unknown'),
+                        "flaggedDate": entity.get('FlaggedDate', ''),
+                        "reason": entity.get('Reason', 'AI Content')
+                    }
+                }, default=str),
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+                status_code=200
+            )
+        except Exception:
+            # Channel not found = not flagged
+            return func.HttpResponse(
+                json.dumps({
+                    "flagged": False,
+                    "channelId": channel_id
+                }),
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+                status_code=200
+            )
+            
+    except Exception as e:
+        logging.error(f"Error checking channel: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}),
+            mimetype="application/json",
+            status_code=500
+        )
+
 @app.route(route="table_read", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET"])
 def table_read(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Table read function triggered.')

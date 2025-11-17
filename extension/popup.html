@@ -17,6 +17,14 @@
       <h2>Warning Display Settings</h2>
       <div class="toggle-group">
         <label class="toggle-item">
+          <input type="checkbox" id="toggleAPISync" checked>
+          <span class="toggle-label">Sync with Cloud API (Auto-detect flagged channels)</span>
+        </label>
+        <div class="api-status" id="apiStatus" style="margin-left: 24px; font-size: 12px; color: #666;">
+          <span id="apiStatusText">Last synced: Never</span>
+          <button id="refreshAPIBtn" style="margin-left: 8px; padding: 2px 8px; font-size: 11px;">Refresh Now</button>
+        </div>
+        <label class="toggle-item">
           <input type="checkbox" id="toggleVideoTitle" checked>
           <span class="toggle-label">Show warning on video title</span>
         </label>

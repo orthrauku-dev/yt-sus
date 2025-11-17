@@ -1,11 +1,89 @@
 // Background service worker
 console.log('YouTube Sentiment Warning background script loaded');
 
+const API_URL = 'http://localhost:7071/api/flagged_channels';
+// When deploying, change to: 'https://YOUR-FUNCTION-APP.azurewebsites.net/api/flagged_channels'
+
 // Initialize the database when extension is installed
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('Extension installed, initializing database...');
-  await chrome.storage.local.set({ highlightedChannels: {} });
+  await chrome.storage.local.set({ 
+    highlightedChannels: {},
+    apiSyncEnabled: true  // API sync enabled by default
+  });
+  // Fetch from API on install
+  fetchFlaggedChannelsFromAPI();
 });
+
+// Fetch flagged channels from API
+async function fetchFlaggedChannelsFromAPI() {
+  try {
+    console.log('Fetching flagged channels from API...');
+    const response = await fetch(API_URL);
+    
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`);
+    }
+    
+    const apiFlaggedChannels = await response.json();
+    console.log('Fetched from API:', Object.keys(apiFlaggedChannels).length, 'channels');
+    
+    // Merge with existing locally flagged channels
+    const result = await chrome.storage.local.get(['highlightedChannels', 'apiSyncEnabled']);
+    const apiSyncEnabled = result.apiSyncEnabled !== false; // Default true
+    
+    if (apiSyncEnabled) {
+      const localChannels = result.highlightedChannels || {};
+      
+      // Convert API format to local format
+      const mergedChannels = { ...localChannels };
+      
+      for (const [channelId, data] of Object.entries(apiFlaggedChannels)) {
+        if (!mergedChannels[channelId]) {
+          mergedChannels[channelId] = {
+            id: channelId,
+            name: data.channelName || 'Unknown',
+            handle: channelId,
+            addedAt: data.flaggedDate || new Date().toISOString(),
+            highlighted: true,
+            fromAPI: true,
+            reason: data.reason
+          };
+        }
+      }
+      
+      await chrome.storage.local.set({ 
+        highlightedChannels: mergedChannels,
+        lastAPISync: new Date().toISOString()
+      });
+      
+      console.log('Merged channels:', Object.keys(mergedChannels).length, 'total');
+      
+      // Notify all YouTube tabs to update highlights
+      notifyAllTabs(mergedChannels);
+    }
+  } catch (error) {
+    console.error('Failed to fetch from API:', error);
+  }
+}
+
+// Notify all YouTube tabs
+function notifyAllTabs(channels) {
+  chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
+    tabs.forEach(tab => {
+      chrome.tabs.sendMessage(tab.id, { 
+        action: 'updateHighlights',
+        channels: channels 
+      }).catch(err => console.log('Could not send message to tab:', err));
+    });
+  });
+}
+
+// Update flagged channels every 5 minutes
+setInterval(fetchFlaggedChannelsFromAPI, 5 * 60 * 1000);
+
+// Also fetch when browser starts
+fetchFlaggedChannelsFromAPI();
 
 // Listen for messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -16,6 +94,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ channels: result.highlightedChannels || {} });
     });
     return true; // Keep message channel open for async response
+  }
+  
+  if (request.action === 'refreshFromAPI') {
+    fetchFlaggedChannelsFromAPI().then(() => {
+      sendResponse({ success: true });
+    }).catch(err => {
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
+  
+  if (request.action === 'toggleAPISync') {
+    chrome.storage.local.set({ apiSyncEnabled: request.enabled }, () => {
+      if (request.enabled) {
+        fetchFlaggedChannelsFromAPI();
+      }
+      sendResponse({ success: true });
+    });
+    return true;
+  }
+  
+  if (request.action === 'getSettings') {
+    chrome.storage.local.get(['apiSyncEnabled', 'lastAPISync'], (result) => {
+      sendResponse({ 
+        apiSyncEnabled: result.apiSyncEnabled !== false,
+        lastAPISync: result.lastAPISync
+      });
+    });
+    return true;
   }
   
   if (request.action === 'toggleChannel') {
@@ -40,14 +147,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       await chrome.storage.local.set({ highlightedChannels: channels });
       
       // Notify all YouTube tabs to update highlights
-      chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
-        tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, { 
-            action: 'updateHighlights',
-            channels: channels 
-          }).catch(err => console.log('Could not send message to tab:', err));
-        });
-      });
+      notifyAllTabs(channels);
       
       sendResponse({ success: true, highlighted: !!channels[channelId] });
     });
@@ -74,14 +174,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         await chrome.storage.local.set({ highlightedChannels: channels });
         
         // Notify all YouTube tabs to update highlights
-        chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
-          tabs.forEach(tab => {
-            chrome.tabs.sendMessage(tab.id, { 
-              action: 'updateHighlights',
-              channels: channels 
-            }).catch(err => console.log('Could not send message to tab:', err));
-          });
-        });
+        notifyAllTabs(channels);
         
         sendResponse({ success: true });
       } else {
@@ -95,14 +188,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'clearAll') {
     chrome.storage.local.set({ highlightedChannels: {} }, () => {
       // Notify all YouTube tabs to update highlights
-      chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
-        tabs.forEach(tab => {
-          chrome.tabs.sendMessage(tab.id, { 
-            action: 'updateHighlights',
-            channels: {} 
-          }).catch(err => console.log('Could not send message to tab:', err));
-        });
-      });
+      notifyAllTabs({});
       sendResponse({ success: true });
     });
     return true;
