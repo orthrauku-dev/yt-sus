@@ -6,6 +6,7 @@ const API_URL = 'http://localhost:7071/api';
 
 // Storage key for votes
 const VOTES_STORAGE_KEY = 'channelVotes';
+const VOTES_CACHE_KEY = 'channelVotesCache';
 
 // Settings
 let votingEnabled = true;
@@ -45,14 +46,45 @@ async function saveVotes(votes) {
 // Get vote count for a channel from API (via background script)
 async function getChannelVotesFromAPI(channelId) {
   try {
-    // Use background script to make the API call (avoids CORS issues)
+    // Check cache first
+    const cache = await chrome.storage.local.get([VOTES_CACHE_KEY]);
+    const votesCache = cache[VOTES_CACHE_KEY] || {};
+    
+    const now = Date.now();
+    const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    
+    // If we have cached data and it's less than 24 hours old, use it
+    if (votesCache[channelId]) {
+      const { votes, timestamp } = votesCache[channelId];
+      const age = now - timestamp;
+      
+      if (age < CACHE_DURATION) {
+        console.log(`Using cached vote count for ${channelId}: ${votes} (age: ${Math.floor(age / 3600000)} hours)`);
+        return votes;
+      } else {
+        console.log(`Cache expired for ${channelId} (age: ${Math.floor(age / 3600000)} hours), fetching fresh data`);
+      }
+    }
+    
+    // Cache miss or expired - fetch from API via background script
+    console.log(`Fetching fresh vote count from API for ${channelId}`);
     const response = await chrome.runtime.sendMessage({
       action: 'getChannelVotes',
       channelId: channelId
     });
     
     if (response && response.success) {
-      return response.votes || 0;
+      const votes = response.votes || 0;
+      
+      // Update cache with new data
+      votesCache[channelId] = {
+        votes: votes,
+        timestamp: now
+      };
+      await chrome.storage.local.set({ [VOTES_CACHE_KEY]: votesCache });
+      
+      console.log(`Cached vote count for ${channelId}: ${votes}`);
+      return votes;
     }
     throw new Error('Failed to get votes from background script');
   } catch (error) {
@@ -86,6 +118,15 @@ async function upvoteChannel(channelId, channelName) {
       const votes = await getVotes();
       votes[channelId] = newVotes;
       await saveVotes(votes);
+      
+      // Update the 24-hour cache as well
+      const cache = await chrome.storage.local.get([VOTES_CACHE_KEY]);
+      const votesCache = cache[VOTES_CACHE_KEY] || {};
+      votesCache[channelId] = {
+        votes: newVotes,
+        timestamp: Date.now()
+      };
+      await chrome.storage.local.set({ [VOTES_CACHE_KEY]: votesCache });
       
       console.log(`Vote sent to API. Channel ${channelId} now has ${newVotes} votes`);
       return newVotes;
