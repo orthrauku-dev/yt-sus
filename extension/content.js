@@ -83,6 +83,9 @@ function applyHighlights() {
   console.log('Channel header element found:', channelHeader);
   
   if (channelHeader) {
+    // First, always unhighlight to clear any previous state
+    unhighlightElement(channelHeader);
+    
     const channelLink = channelHeader.querySelector('a[href*="/channel/"], a[href*="/@"], a.yt-simple-endpoint[href*="/@"]');
     console.log('Channel link found:', channelLink);
     console.log('Channel link href:', channelLink?.href);
@@ -97,7 +100,6 @@ function applyHighlights() {
         highlightElement(channelHeader);
       } else {
         console.log('Channel not in highlighted list or no ID found');
-        unhighlightElement(channelHeader);
       }
     } else {
       console.log('No channel link found in header');
@@ -130,6 +132,15 @@ function checkVideoPage() {
     // Find video owner channel link
     const ownerLink = document.querySelector('ytd-watch-metadata a.yt-simple-endpoint[href*="/@"], ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]');
     
+    // Always remove existing warning first to avoid stale warnings
+    const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
+    if (videoTitle) {
+      const existingWarning = videoTitle.querySelector('.yt-ai-warning');
+      if (existingWarning) {
+        existingWarning.remove();
+      }
+    }
+    
     if (ownerLink) {
       const channelId = extractChannelId(ownerLink.href);
       
@@ -149,8 +160,6 @@ function checkVideoPage() {
         console.log('Video is from highlighted channel, adding warning to title');
         
         // Find the video title
-        const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
-        
         if (videoTitle && !videoTitle.querySelector('.yt-ai-warning')) {
           const warning = document.createElement('span');
           warning.className = 'yt-ai-warning';
@@ -169,15 +178,6 @@ function checkVideoPage() {
           
           videoTitle.appendChild(warning);
           console.log('Warning added to video title');
-        }
-      } else {
-        // Remove warning if channel is no longer highlighted
-        const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
-        if (videoTitle) {
-          const existingWarning = videoTitle.querySelector('.yt-ai-warning');
-          if (existingWarning) {
-            existingWarning.remove();
-          }
         }
       }
     }
@@ -282,6 +282,8 @@ function unhighlightElement(element) {
   
   // Reset styles
   element.style.backgroundColor = '';
+  element.style.border = '';
+  element.style.transition = '';
 }
 
 // Observe page changes (YouTube is a SPA)
