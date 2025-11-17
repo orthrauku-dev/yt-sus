@@ -106,9 +106,14 @@ async function upvoteChannel(channelId, channelName) {
 // Check if user has voted for a channel (using session storage to track per-session)
 function hasVotedThisSession(channelId) {
   const sessionVotes = sessionStorage.getItem('votedChannels');
-  if (!sessionVotes) return false;
+  if (!sessionVotes) {
+    console.log(`No session votes found for ${channelId}`);
+    return false;
+  }
   const voted = JSON.parse(sessionVotes);
-  return voted.includes(channelId);
+  const hasVoted = voted.includes(channelId);
+  console.log(`Session votes:`, voted, `Has ${channelId} voted?`, hasVoted);
+  return hasVoted;
 }
 
 // Mark channel as voted in this session
@@ -189,6 +194,24 @@ async function createAndInsertButton(actionsContainer, channelId) {
     const hasVoted = hasVotedThisSession(channelId);
     console.log('Has voted this session:', hasVoted);
 
+    // Check if threshold reached - auto-add to AI warning list
+    if (voteCount >= voteThreshold) {
+      console.log(`Channel ${channelId} has reached threshold (${voteCount} >= ${voteThreshold})`);
+      
+      // Check if already in the warned list
+      const response = await chrome.runtime.sendMessage({ action: 'getHighlightedChannels' });
+      const highlightedChannels = response.channels || {};
+      
+      if (!highlightedChannels[channelId]) {
+        console.log(`Auto-adding ${channelId} to warning list`);
+        await addChannelToWarningList(channelId, voteCount);
+        // Don't continue creating the button since we're reloading
+        return;
+      } else {
+        console.log(`Channel ${channelId} already in warning list`);
+      }
+    }
+
     // Create vote button container
     const voteButtonContainer = document.createElement('div');
     voteButtonContainer.className = 'ytFlexibleActionsViewModelAction yt-ai-vote-button';
@@ -258,7 +281,7 @@ async function createAndInsertButton(actionsContainer, channelId) {
       // Check if threshold reached - auto-add to AI warning list
       if (newCount >= voteThreshold) {
         console.log(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
-        await addChannelToWarningList(channelId);
+        await addChannelToWarningList(channelId, newCount);
       }
     });
 
@@ -288,7 +311,7 @@ function removeVotingButton() {
 }
 
 // Add channel to AI warning list
-async function addChannelToWarningList(channelId) {
+async function addChannelToWarningList(channelId, voteCount) {
   // Get channel name from page
   let channelName = 'Unknown Channel';
   
@@ -312,19 +335,17 @@ async function addChannelToWarningList(channelId) {
   const response = await chrome.runtime.sendMessage({
     action: 'addChannel',
     channelId: channelId,
-    channelName: channelName
+    channelName: channelName,
+    votes: voteCount
   });
   
   if (response && response.success) {
-    console.log(`Channel ${channelId} (${channelName}) added to warning list`);
+    console.log(`Channel ${channelId} (${channelName}) added to warning list with ${voteCount} votes`);
     
     // Show notification
     showThresholdNotification();
-    
-    // Reload the page to apply warnings
-    setTimeout(() => {
-      window.location.reload();
-    }, 2000);
+  } else {
+    console.log(`Channel ${channelId} was already in the list or failed to add`);
   }
 }
 

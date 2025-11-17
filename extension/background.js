@@ -231,7 +231,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'addChannel') {
     chrome.storage.local.get('highlightedChannels', async (result) => {
       const channels = result.highlightedChannels || {};
-      const { channelId, channelName } = request;
+      const { channelId, channelName, votes } = request;
       
       // Add channel if not already in list
       if (!channels[channelId]) {
@@ -241,9 +241,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           handle: channelId,
           addedAt: new Date().toISOString(),
           highlighted: true,
-          autoAdded: true  // Auto-added via voting
+          autoAdded: true,  // Auto-added via voting threshold
+          votes: votes || 0
         };
-        console.log('Channel added via voting (auto-added):', channelId);
+        console.log(`Channel added via voting (auto-added): ${channelId} with ${votes} votes`);
         
         await chrome.storage.local.set({ highlightedChannels: channels });
         

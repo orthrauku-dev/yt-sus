@@ -3,8 +3,9 @@ import datetime
 import json
 import logging
 import os
-from azure.data.tables import TableServiceClient
+from azure.data.tables import TableServiceClient, UpdateMode
 from azure.identity import DefaultAzureCredential
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
 app = func.FunctionApp()
 
@@ -245,36 +246,56 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
     try:
         table_client = get_table_client('ytsustable')
         
-        # Try to get existing channel entity
+        # Try to get existing channel entity first
         try:
             entity = table_client.get_entity(partition_key='channels', row_key=channel_id)
-            current_votes = entity.get('VoteCount', 0)
             
-            # Update vote count
+            # Entity exists - increment vote count
+            current_votes = entity.get('VoteCount', 0)
             entity['VoteCount'] = current_votes + 1
             entity['LastVoted'] = datetime.datetime.utcnow().isoformat() + 'Z'
-            if not entity.get('ChannelName'):
+            
+            # Update channel name if not set
+            if not entity.get('ChannelName') or entity.get('ChannelName') == 'Unknown':
                 entity['ChannelName'] = channel_name
             
-            table_client.update_entity(entity, mode='REPLACE')
+            # Use MERGE mode to only update changed fields
+            table_client.update_entity(entity, mode=UpdateMode.MERGE)
             new_votes = current_votes + 1
             
-        except Exception:
-            # Create new channel entity with vote (not flagged by default)
-            entity = {
-                'PartitionKey': 'channels',
-                'RowKey': channel_id,
-                'VoteCount': 1,
-                'ChannelName': channel_name,
-                'Flagged': False,  # Requires manual review to flag
-                'FirstVoted': datetime.datetime.utcnow().isoformat() + 'Z',
-                'LastVoted': datetime.datetime.utcnow().isoformat() + 'Z',
-                'Reason': 'Community Reported AI Content'
-            }
-            table_client.create_entity(entity)
-            new_votes = 1
-        
-        logging.info(f"Channel {channel_id} voted, new count: {new_votes}")
+            logging.info(f"Updated channel {channel_id}, new count: {new_votes}")
+            
+        except (ResourceNotFoundError, Exception) as get_error:
+            # Entity doesn't exist - create new one with 1 vote
+            logging.info(f"Channel {channel_id} not found, creating new entity: {str(get_error)}")
+            
+            try:
+                entity = {
+                    'PartitionKey': 'channels',
+                    'RowKey': channel_id,
+                    'VoteCount': 1,
+                    'ChannelName': channel_name,
+                    'Flagged': False,  # Not flagged by default, needs manual review
+                    'FirstVoted': datetime.datetime.utcnow().isoformat() + 'Z',
+                    'LastVoted': datetime.datetime.utcnow().isoformat() + 'Z',
+                    'Reason': 'Community Reported AI Content'
+                }
+                
+                table_client.create_entity(entity)
+                new_votes = 1
+                
+                logging.info(f"Created channel {channel_id} with 1 vote")
+            except ResourceExistsError:
+                # Race condition - entity was created between get and create
+                # Retry the get and update
+                logging.info(f"Race condition detected for {channel_id}, retrying...")
+                entity = table_client.get_entity(partition_key='channels', row_key=channel_id)
+                current_votes = entity.get('VoteCount', 0)
+                entity['VoteCount'] = current_votes + 1
+                entity['LastVoted'] = datetime.datetime.utcnow().isoformat() + 'Z'
+                table_client.update_entity(entity, mode=UpdateMode.MERGE)
+                new_votes = current_votes + 1
+                logging.info(f"Retried and updated channel {channel_id}, new count: {new_votes}")
         
         return func.HttpResponse(
             json.dumps({
@@ -289,9 +310,14 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
             
     except Exception as e:
         logging.error(f"Error voting for channel: {str(e)}")
+        logging.error(f"Error type: {type(e).__name__}")
         return func.HttpResponse(
-            json.dumps({"error": str(e)}),
+            json.dumps({
+                "error": str(e),
+                "type": type(e).__name__
+            }),
             mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
             status_code=500
         )
 
