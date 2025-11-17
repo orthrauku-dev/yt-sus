@@ -114,7 +114,13 @@ async function addVotingButton() {
   // Button content
   const buttonContent = document.createElement('div');
   buttonContent.className = 'yt-spec-button-shape-next__button-text-content';
-  buttonContent.innerHTML = `👍 ${voteCount > 0 ? voteCount : 'Upvote'}`;
+  buttonContent.innerHTML = `
+    <span style="display: flex; align-items: center; gap: 6px;">
+      <span style="font-size: 18px;">🤖</span>
+      <span style="font-weight: 600;">Report AI Content:</span>
+      <span style="font-weight: 700; color: #ff4444;">${voteCount > 0 ? voteCount : '0'}</span>
+    </span>
+  `;
   voteButton.appendChild(buttonContent);
 
   // Touch feedback (for consistency with YouTube's design)
