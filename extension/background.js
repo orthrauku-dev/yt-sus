@@ -1,5 +1,5 @@
 // Background service worker
-console.log('YouTube AI Content Warning background script loaded');
+console.log('YouTube Sentiment Warning background script loaded');
 
 // Initialize the database when extension is installed
 chrome.runtime.onInstalled.addListener(async () => {
@@ -50,6 +50,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       
       sendResponse({ success: true, highlighted: !!channels[channelId] });
+    });
+    return true;
+  }
+  
+  if (request.action === 'addChannel') {
+    chrome.storage.local.get('highlightedChannels', async (result) => {
+      const channels = result.highlightedChannels || {};
+      const { channelId, channelName } = request;
+      
+      // Add channel if not already in list
+      if (!channels[channelId]) {
+        channels[channelId] = {
+          id: channelId,
+          name: channelName,
+          handle: channelId,
+          addedAt: new Date().toISOString(),
+          highlighted: true,
+          addedByVoting: true
+        };
+        console.log('Channel added via voting:', channelId);
+        
+        await chrome.storage.local.set({ highlightedChannels: channels });
+        
+        // Notify all YouTube tabs to update highlights
+        chrome.tabs.query({ url: 'https://www.youtube.com/*' }, (tabs) => {
+          tabs.forEach(tab => {
+            chrome.tabs.sendMessage(tab.id, { 
+              action: 'updateHighlights',
+              channels: channels 
+            }).catch(err => console.log('Could not send message to tab:', err));
+          });
+        });
+        
+        sendResponse({ success: true });
+      } else {
+        console.log('Channel already in list:', channelId);
+        sendResponse({ success: false, reason: 'already_exists' });
+      }
     });
     return true;
   }

@@ -8,8 +8,8 @@ let highlightedChannels = {};
 let settings = {
   showVideoTitle: true,
   showChannelHeader: true,
-  showSidebar: true,
-  showVoting: true
+  showVoting: true,
+  voteThreshold: 10
 };
 
 // DOM elements
@@ -20,8 +20,10 @@ const channelCount = document.getElementById('channelCount');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const toggleVideoTitle = document.getElementById('toggleVideoTitle');
 const toggleChannelHeader = document.getElementById('toggleChannelHeader');
-const toggleSidebar = document.getElementById('toggleSidebar');
 const toggleVoting = document.getElementById('toggleVoting');
+const votingThreshold = document.getElementById('votingThreshold');
+const thresholdSlider = document.getElementById('thresholdSlider');
+const thresholdValue = document.getElementById('thresholdValue');
 
 // Initialize popup
 async function init() {
@@ -41,8 +43,34 @@ async function init() {
   clearAllBtn.addEventListener('click', handleClearAll);
   toggleVideoTitle.addEventListener('change', handleSettingChange);
   toggleChannelHeader.addEventListener('change', handleSettingChange);
-  toggleSidebar.addEventListener('change', handleSettingChange);
-  toggleVoting.addEventListener('change', handleSettingChange);
+  toggleVoting.addEventListener('change', handleVotingToggle);
+  thresholdSlider.addEventListener('input', handleThresholdChange);
+}
+
+// Handle voting toggle
+function handleVotingToggle() {
+  settings.showVoting = toggleVoting.checked;
+  
+  // Show/hide threshold slider
+  if (toggleVoting.checked) {
+    votingThreshold.classList.remove('hidden');
+  } else {
+    votingThreshold.classList.add('hidden');
+  }
+  
+  handleSettingChange({ target: toggleVoting });
+}
+
+// Handle threshold slider change
+async function handleThresholdChange() {
+  const value = parseInt(thresholdSlider.value);
+  thresholdValue.textContent = value;
+  settings.voteThreshold = value;
+  
+  // Save settings
+  await chrome.storage.local.set({ warningSettings: settings });
+  
+  console.log('Vote threshold changed to:', value);
 }
 
 // Load settings from storage
@@ -55,8 +83,18 @@ async function loadSettings() {
   // Update checkboxes
   toggleVideoTitle.checked = settings.showVideoTitle;
   toggleChannelHeader.checked = settings.showChannelHeader;
-  toggleSidebar.checked = settings.showSidebar;
   toggleVoting.checked = settings.showVoting;
+  
+  // Update threshold slider
+  thresholdSlider.value = settings.voteThreshold || 10;
+  thresholdValue.textContent = settings.voteThreshold || 10;
+  
+  // Show/hide threshold based on voting toggle
+  if (settings.showVoting) {
+    votingThreshold.classList.remove('hidden');
+  } else {
+    votingThreshold.classList.add('hidden');
+  }
   
   console.log('Loaded settings:', settings);
 }

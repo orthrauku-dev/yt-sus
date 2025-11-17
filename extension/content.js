@@ -4,8 +4,7 @@ console.log('YouTube AI Content Warning content script loaded');
 let highlightedChannels = {};
 let settings = {
   showVideoTitle: true,
-  showChannelHeader: true,
-  showSidebar: true
+  showChannelHeader: true
 };
 
 // Initialize by loading highlighted channels and settings
@@ -121,7 +120,7 @@ function applyHighlights() {
   checkVideoPage();
 }
 
-// Store the current video's channel info for sidebar matching
+// Store the current video's channel info
 let currentVideoChannelName = null;
 
 // Check if we're on a video page and add warning to title if channel is highlighted
@@ -140,7 +139,7 @@ function checkVideoPage() {
         channelNameText = highlightedChannels[channelId].name || '';
       }
       
-      // Store the channel name text for sidebar matching
+      // Store the channel name
       currentVideoChannelName = channelNameText;
       
       console.log('Video page - Channel ID:', channelId);
@@ -192,234 +191,6 @@ function checkVideoPage() {
       }
     }
   }
-  
-  // Add warnings to sidebar videos - with delays and a dedicated observer
-  setTimeout(() => {
-    addWarningsToSidebarVideos();
-  }, 1500);
-  
-  setTimeout(() => {
-    addWarningsToSidebarVideos();
-  }, 3000);
-  
-  setTimeout(() => {
-    addWarningsToSidebarVideos();
-  }, 5000);
-  
-  // Also set up a specific observer for the sidebar
-  observeSidebarChanges();
-}
-
-// Observe changes specifically in the sidebar for related videos loading
-function observeSidebarChanges() {
-  const sidebar = document.querySelector('#secondary');
-  if (!sidebar) {
-    console.log('Sidebar not found for observer');
-    return;
-  }
-  
-  const sidebarObserver = new MutationObserver((mutations) => {
-    // Check if ytd-compact-video-renderer or yt-lockup-view-model elements were added
-    const hasNewVideos = mutations.some(mutation => 
-      Array.from(mutation.addedNodes).some(node => 
-        node.nodeName === 'YTD-COMPACT-VIDEO-RENDERER' ||
-        node.nodeName === 'YT-LOCKUP-VIEW-MODEL' ||
-        (node.querySelector && (node.querySelector('ytd-compact-video-renderer') || node.querySelector('yt-lockup-view-model')))
-      )
-    );
-    
-    // Ignore mutations from our own warning additions
-    const isOurChange = mutations.some(mutation => 
-      Array.from(mutation.addedNodes).some(node => 
-        (node.classList && node.classList.contains('yt-ai-warning-sidebar')) ||
-        (node.className && typeof node.className === 'string' && node.className.includes('yt-ai-warning-sidebar')) ||
-        (node.querySelector && node.querySelector('.yt-ai-warning-sidebar'))
-      )
-    );
-    
-    if (hasNewVideos && !isOurChange) {
-      console.log('New sidebar videos detected, adding warnings...');
-      // Small delay to let YouTube finish rendering
-      setTimeout(() => {
-        addWarningsToSidebarVideos();
-      }, 500);
-    }
-  });
-  
-  sidebarObserver.observe(sidebar, {
-    childList: true,
-    subtree: true
-  });
-  
-  console.log('Sidebar observer set up');
-}
-
-// Add warnings to channel names in sidebar/related videos
-let isProcessingSidebar = false;
-function addWarningsToSidebarVideos() {
-  // Check if sidebar warnings are enabled
-  if (!settings.showSidebar) {
-    console.log('Sidebar warnings disabled');
-    return;
-  }
-  
-  if (isProcessingSidebar) {
-    console.log('Already processing sidebar, skipping...');
-    return;
-  }
-  
-  isProcessingSidebar = true;
-  console.log('Adding warnings to sidebar videos...');
-  
-  // Wait for the sidebar container to have actual content
-  const sidebar = document.querySelector('#secondary ytd-watch-next-secondary-results-renderer');
-  if (!sidebar) {
-    console.log('Sidebar not found, will retry later');
-    isProcessingSidebar = false;
-    return;
-  }
-  
-  // Select all video renderers - try BOTH old and new structures
-  let sidebarVideos = document.querySelectorAll('#secondary ytd-compact-video-renderer');
-  
-  // If no old-style videos, try the new view-model structure
-  if (sidebarVideos.length === 0) {
-    sidebarVideos = document.querySelectorAll('#secondary yt-lockup-view-model');
-  }
-  
-  console.log(`Found ${sidebarVideos.length} sidebar videos`);
-  
-  if (sidebarVideos.length === 0) {
-    console.log('No videos loaded yet, sidebar may still be loading');
-    isProcessingSidebar = false;
-    return;
-  }
-  
-  sidebarVideos.forEach((video, index) => {
-    // Try multiple selectors to find channel name (YouTube structure varies)
-    const selectors = [
-      'yt-content-metadata-view-model .yt-core-attributed-string',
-      '.yt-core-attributed-string[role="text"]',
-      'yt-formatted-string.ytd-channel-name',
-      '#channel-name yt-formatted-string',
-      'ytd-channel-name a',
-      '#text.ytd-channel-name',
-      'a.yt-simple-endpoint.yt-formatted-string',
-      '.ytd-video-meta-block #text'
-    ];
-    
-    let channelNameElement = null;
-    for (const selector of selectors) {
-      channelNameElement = video.querySelector(selector);
-      if (channelNameElement && channelNameElement.textContent.trim()) {
-        if (index === 0) {
-          console.log(`Found channel name with selector: ${selector}`);
-        }
-        break;
-      }
-    }
-    
-    if (!channelNameElement) {
-      if (index === 0) {
-        console.log('Could not find channel name element in first video');
-        console.log('Video HTML structure:', video.outerHTML.substring(0, 500));
-      }
-      return;
-    }
-    
-    // Get channel name, excluding any warning text that might already be there
-    let channelName = channelNameElement.textContent.trim();
-    // Remove any existing warning text
-    channelName = channelName.replace(/\s*⚠️\s*AI\s*$/, '').trim();
-    
-    if (index === 0) {
-      console.log('First video channel name:', channelName);
-      console.log('Current video channel name:', currentVideoChannelName);
-      console.log('Highlighted channels:', Object.keys(highlightedChannels));
-    }
-    
-    // Check if already processed
-    if (video.dataset.aiWarningProcessed === 'true') {
-      return; // Skip this specific video, but continue with others
-    }
-    
-    // Simple text matching - if this sidebar video's channel name matches
-    // the current video's channel name, and that channel is highlighted, mark it
-    let isHighlighted = false;
-    let matchedChannelId = null;
-    
-    // Get the current video's channel ID if we're on a video page
-    const ownerLink = document.querySelector('ytd-watch-metadata a.yt-simple-endpoint[href*="/@"], ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]');
-    if (ownerLink) {
-      const channelId = extractChannelId(ownerLink.href);
-      
-      // Check if current video's channel is highlighted and get the stored name
-      if (channelId && highlightedChannels[channelId]) {
-        const videoChannelName = highlightedChannels[channelId].name || '';
-        
-        // Now check if sidebar video matches this channel name
-        if (channelName === videoChannelName) {
-          isHighlighted = true;
-          matchedChannelId = channelId;
-          
-          if (index === 0) {
-            console.log(`✓ MATCH! Sidebar video from same channel: "${channelName}"`);
-          }
-        } else if (index < 3) {
-          console.log(`✗ No match: "${channelName}" !== "${videoChannelName}"`);
-        }
-      }
-    }
-    
-    if (isHighlighted) {
-      console.log(`Sidebar video from highlighted channel: ${matchedChannelId} (name: ${channelName})`);
-      
-      // Check if warning already exists
-      if (!channelNameElement.querySelector('.yt-ai-warning-sidebar')) {
-        // Create warning badge
-        const warning = document.createElement('span');
-        warning.className = 'yt-ai-warning-sidebar';
-        warning.innerHTML = ' ⚠️ AI';
-        warning.title = 'This channel may use AI-generated content';
-        warning.style.color = '#ff8800';
-        warning.style.fontWeight = 'bold';
-        warning.style.marginLeft = '6px';
-        warning.style.fontSize = '0.85em';
-        warning.style.display = 'inline-block';
-        warning.style.whiteSpace = 'nowrap';
-        warning.style.padding = '2px 6px';
-        warning.style.backgroundColor = 'rgba(255, 136, 0, 0.2)';
-        warning.style.borderRadius = '3px';
-        warning.style.border = '1px solid rgba(255, 136, 0, 0.5)';
-        warning.style.verticalAlign = 'middle';
-        
-        channelNameElement.appendChild(warning);
-        console.log('Warning added to sidebar video');
-      }
-      
-      // Also add a subtle highlight to the entire video item
-      video.style.borderLeft = '3px solid rgba(255, 136, 0, 0.6)';
-      video.style.paddingLeft = '5px';
-      
-      // Mark as processed
-      video.dataset.aiWarningProcessed = 'true';
-    } else {
-      // Remove warning if channel is no longer highlighted
-      if (channelNameElement) {
-        const existingWarning = channelNameElement.querySelector('.yt-ai-warning-sidebar');
-        if (existingWarning) {
-          existingWarning.remove();
-        }
-      }
-      video.style.borderLeft = '';
-      video.style.paddingLeft = '';
-      
-      // Mark as processed
-      video.dataset.aiWarningProcessed = 'true';
-    }
-  });
-  
-  isProcessingSidebar = false;
 }
 
 // Highlight an element with warning emoji
@@ -523,7 +294,7 @@ function observePageChanges() {
           if (!node) return false;
           
           // Check classList first (most reliable)
-          if (node.classList && (node.classList.contains('yt-ai-warning-sidebar') || node.classList.contains('yt-ai-warning') || node.classList.contains('yt-highlighted-channel'))) {
+          if (node.classList && (node.classList.contains('yt-ai-warning') || node.classList.contains('yt-highlighted-channel'))) {
             return true;
           }
           
@@ -537,7 +308,7 @@ function observePageChanges() {
           // Check if it contains warning elements
           if (node.querySelector) {
             try {
-              if (node.querySelector('.yt-ai-warning-sidebar') || node.querySelector('.yt-ai-warning')) {
+              if (node.querySelector('.yt-ai-warning')) {
                 return true;
               }
             } catch (e) {

@@ -6,6 +6,7 @@ const VOTES_STORAGE_KEY = 'channelVotes';
 
 // Settings
 let votingEnabled = true;
+let voteThreshold = 10;
 
 // Load settings
 async function loadVotingSettings() {
@@ -13,7 +14,10 @@ async function loadVotingSettings() {
   if (result.warningSettings && result.warningSettings.showVoting !== undefined) {
     votingEnabled = result.warningSettings.showVoting;
   }
-  console.log('Voting enabled:', votingEnabled);
+  if (result.warningSettings && result.warningSettings.voteThreshold !== undefined) {
+    voteThreshold = result.warningSettings.voteThreshold;
+  }
+  console.log('Voting enabled:', votingEnabled, 'Threshold:', voteThreshold);
 }
 
 // Get all votes from storage
@@ -147,6 +151,12 @@ async function addVotingButton() {
     showVoteFeedback(voteButton);
     
     console.log(`Upvoted channel ${channelId}, new count: ${newCount}`);
+    
+    // Check if threshold reached - auto-add to AI warning list
+    if (newCount >= voteThreshold) {
+      console.log(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
+      await addChannelToWarningList(channelId);
+    }
   });
 
   voteButtonContainer.appendChild(voteButton);
@@ -169,6 +179,72 @@ function removeVotingButton() {
     existingButton.remove();
     console.log('Vote button removed');
   }
+}
+
+// Add channel to AI warning list
+async function addChannelToWarningList(channelId) {
+  // Get channel name from page
+  let channelName = 'Unknown Channel';
+  
+  // Try to extract channel name from page
+  const nameSelectors = [
+    'yt-page-header-view-model .yt-core-attributed-string[role="text"]',
+    'ytd-channel-name yt-formatted-string',
+    '#channel-header #text',
+    'yt-formatted-string.ytd-channel-name'
+  ];
+  
+  for (const selector of nameSelectors) {
+    const nameEl = document.querySelector(selector);
+    if (nameEl && nameEl.textContent.trim()) {
+      channelName = nameEl.textContent.trim();
+      break;
+    }
+  }
+  
+  // Send message to background script to add channel
+  const response = await chrome.runtime.sendMessage({
+    action: 'addChannel',
+    channelId: channelId,
+    channelName: channelName
+  });
+  
+  if (response && response.success) {
+    console.log(`Channel ${channelId} (${channelName}) added to warning list`);
+    
+    // Show notification
+    showThresholdNotification();
+    
+    // Reload the page to apply warnings
+    setTimeout(() => {
+      window.location.reload();
+    }, 2000);
+  }
+}
+
+// Show notification when threshold is reached
+function showThresholdNotification() {
+  const notification = document.createElement('div');
+  notification.textContent = '✓ Channel added to AI warning list!';
+  notification.style.position = 'fixed';
+  notification.style.top = '20px';
+  notification.style.left = '50%';
+  notification.style.transform = 'translateX(-50%)';
+  notification.style.backgroundColor = '#ff8800';
+  notification.style.color = 'white';
+  notification.style.padding = '16px 24px';
+  notification.style.borderRadius = '8px';
+  notification.style.fontSize = '16px';
+  notification.style.fontWeight = 'bold';
+  notification.style.zIndex = '999999';
+  notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+  notification.style.animation = 'slideDown 0.3s ease';
+  
+  document.body.appendChild(notification);
+  
+  setTimeout(() => {
+    notification.remove();
+  }, 3000);
 }
 
 // Show visual feedback when voting
