@@ -327,11 +327,12 @@ async function createAndInsertButton(actionsContainer, channelId) {
         // Mark as voted
         markAsVoted(channelId);
         
-        // Update button to success state
+        // Update button to show new count (keep original format)
         buttonContent.innerHTML = `
           <span style="display: flex; align-items: center; gap: 6px;">
-            <span style="font-size: 18px;">👍</span>
-            <span style="font-weight: 600;">${newCount}</span>
+            <span style="font-size: 18px;">🤖</span>
+            <span style="font-weight: 600;">Report AI Content:</span>
+            <span style="font-weight: 700; color: #ff4444;">${newCount}</span>
           </span>
         `;
         voteButton.style.opacity = '0.7';
