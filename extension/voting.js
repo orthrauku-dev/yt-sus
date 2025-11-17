@@ -301,28 +301,83 @@ async function createAndInsertButton(actionsContainer, channelId) {
         return;
       }
 
-      // Add vote (sends to API)
-      const newCount = await upvoteChannel(channelId, channelName);
-      
-      // Mark as voted
-      markAsVoted(channelId);
-      
-      // Update button
-      buttonContent.innerHTML = `👍 ${newCount}`;
-      voteButton.style.opacity = '0.7';
-      voteButton.style.cursor = 'default';
+      // Show loading state
       voteButton.disabled = true;
-      voteButton.setAttribute('aria-label', 'Already upvoted');
+      voteButton.style.cursor = 'wait';
+      const originalContent = buttonContent.innerHTML;
+      buttonContent.innerHTML = `
+        <span style="display: flex; align-items: center; gap: 6px;">
+          <span style="display: inline-block; width: 16px; height: 16px; border: 2px solid #999; border-top-color: #333; border-radius: 50%; animation: spin 0.6s linear infinite;"></span>
+          <span style="font-weight: 600;">Voting...</span>
+        </span>
+      `;
       
-      // Show feedback
-      showVoteFeedback(voteButton);
-      
-      console.log(`Upvoted channel ${channelId}, new count: ${newCount}`);
-      
-      // Check if threshold reached - auto-add to AI warning list
-      if (newCount >= voteThreshold) {
-        console.log(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
-        await addChannelToWarningList(channelId, newCount);
+      // Add spinner animation
+      if (!document.getElementById('vote-spinner-style')) {
+        const style = document.createElement('style');
+        style.id = 'vote-spinner-style';
+        style.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+        document.head.appendChild(style);
+      }
+
+      try {
+        // Add vote (sends to API)
+        const newCount = await upvoteChannel(channelId, channelName);
+        
+        // Mark as voted
+        markAsVoted(channelId);
+        
+        // Update button to success state
+        buttonContent.innerHTML = `
+          <span style="display: flex; align-items: center; gap: 6px;">
+            <span style="font-size: 18px;">👍</span>
+            <span style="font-weight: 600;">${newCount}</span>
+          </span>
+        `;
+        voteButton.style.opacity = '0.7';
+        voteButton.style.cursor = 'default';
+        voteButton.setAttribute('aria-label', 'Already upvoted');
+        
+        // Show feedback
+        showVoteFeedback(voteButton);
+        
+        console.log(`Upvoted channel ${channelId}, new count: ${newCount}`);
+        
+        // Check if threshold reached - auto-add to AI warning list
+        if (newCount >= voteThreshold) {
+          console.log(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
+          await addChannelToWarningList(channelId, newCount);
+        }
+      } catch (error) {
+        console.error('Error voting:', error);
+        // Restore original content on error
+        buttonContent.innerHTML = originalContent;
+        voteButton.disabled = false;
+        voteButton.style.cursor = 'pointer';
+        
+        // Show error feedback
+        const errorMsg = document.createElement('div');
+        errorMsg.textContent = '✗ Failed';
+        errorMsg.style.position = 'absolute';
+        errorMsg.style.top = '-30px';
+        errorMsg.style.left = '50%';
+        errorMsg.style.transform = 'translateX(-50%)';
+        errorMsg.style.backgroundColor = 'rgba(255, 0, 0, 0.9)';
+        errorMsg.style.color = 'white';
+        errorMsg.style.padding = '4px 8px';
+        errorMsg.style.borderRadius = '4px';
+        errorMsg.style.fontSize = '12px';
+        errorMsg.style.fontWeight = 'bold';
+        errorMsg.style.whiteSpace = 'nowrap';
+        errorMsg.style.zIndex = '9999';
+        errorMsg.style.pointerEvents = 'none';
+        
+        voteButton.style.position = 'relative';
+        voteButton.appendChild(errorMsg);
+        
+        setTimeout(() => {
+          errorMsg.remove();
+        }, 2000);
       }
     });
 
