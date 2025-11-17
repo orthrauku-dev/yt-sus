@@ -46,10 +46,10 @@ def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
              status_code=200
         )
 
-@app.route(route="flagged_channels", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET"])
+@app.route(route="flagged_channels", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET", "OPTIONS"])
 def flagged_channels(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Get all flagged AI YouTubers.
+    Get all flagged AI YouTubers with vote counts.
     Returns a simple object with channel IDs as keys for easy lookup in the extension.
     
     Example response:
@@ -57,35 +57,44 @@ def flagged_channels(req: func.HttpRequest) -> func.HttpResponse:
         "UCxxxxxxxxxxxx": {
             "channelName": "AI Channel Name",
             "flaggedDate": "2025-11-17T12:00:00Z",
-            "reason": "AI Content"
-        },
-        "@channelhandle": {
-            "channelName": "Another AI Channel",
-            "flaggedDate": "2025-11-17T13:00:00Z",
-            "reason": "AI Generated Videos"
+            "reason": "AI Content",
+            "votes": 15
         }
     }
     """
+    # Handle CORS preflight
+    if req.method == "OPTIONS":
+        return func.HttpResponse(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            }
+        )
+    
     logging.info('Flagged channels API called')
     
     try:
         table_client = get_table_client('ytsustable')
         
-        # Query all entities with PartitionKey = "flagged"
-        entities = table_client.query_entities(query_filter="PartitionKey eq 'flagged'")
+        # Query all entities with PartitionKey = "channels"
+        all_entities = table_client.query_entities(query_filter="PartitionKey eq 'channels'")
         
         # Convert to the format expected by the extension
-        # Extension expects: { "channelId": {...}, "channelId2": {...} }
         flagged_channels_dict = {}
         
-        for entity in entities:
-            channel_id = entity.get('RowKey')
-            if channel_id:
-                flagged_channels_dict[channel_id] = {
-                    'channelName': entity.get('ChannelName', 'Unknown'),
-                    'flaggedDate': entity.get('FlaggedDate', ''),
-                    'reason': entity.get('Reason', 'AI Content')
-                }
+        for entity in all_entities:
+            # Only include if Flagged is true
+            if entity.get('Flagged', False):
+                channel_id = entity.get('RowKey')
+                if channel_id:
+                    flagged_channels_dict[channel_id] = {
+                        'channelName': entity.get('ChannelName', 'Unknown'),
+                        'flaggedDate': entity.get('FlaggedDate', ''),
+                        'reason': entity.get('Reason', 'AI Content'),
+                        'votes': entity.get('VoteCount', 0)
+                    }
         
         logging.info(f"Returning {len(flagged_channels_dict)} flagged channels")
         
@@ -111,7 +120,7 @@ def flagged_channels(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500
         )
 
-@app.route(route="check_channel", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET"])
+@app.route(route="check_channel", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET", "OPTIONS"])
 def check_channel(req: func.HttpRequest) -> func.HttpResponse:
     """
     Check if a specific channel is flagged.
@@ -120,9 +129,21 @@ def check_channel(req: func.HttpRequest) -> func.HttpResponse:
     Returns:
     {
         "flagged": true/false,
+        "votes": 123,
         "details": {...} (if flagged)
     }
     """
+    # Handle CORS preflight
+    if req.method == "OPTIONS":
+        return func.HttpResponse(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            }
+        )
+    
     logging.info('Check channel API called')
     
     channel_id = req.params.get('channelId')
@@ -130,43 +151,144 @@ def check_channel(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             json.dumps({"error": "channelId parameter is required"}),
             mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
             status_code=400
         )
     
     try:
         table_client = get_table_client('ytsustable')
         
-        # Try to get the specific entity
+        # Try to get the channel entity
+        flagged = False
+        details = {}
+        votes = 0
+        
         try:
-            entity = table_client.get_entity(partition_key='flagged', row_key=channel_id)
-            return func.HttpResponse(
-                json.dumps({
-                    "flagged": True,
-                    "channelId": channel_id,
-                    "details": {
-                        "channelName": entity.get('ChannelName', 'Unknown'),
-                        "flaggedDate": entity.get('FlaggedDate', ''),
-                        "reason": entity.get('Reason', 'AI Content')
-                    }
-                }, default=str),
-                mimetype="application/json",
-                headers={"Access-Control-Allow-Origin": "*"},
-                status_code=200
-            )
+            entity = table_client.get_entity(partition_key='channels', row_key=channel_id)
+            flagged = entity.get('Flagged', False)
+            votes = entity.get('VoteCount', 0)
+            if flagged:
+                details = {
+                    "channelName": entity.get('ChannelName', 'Unknown'),
+                    "flaggedDate": entity.get('FlaggedDate', ''),
+                    "reason": entity.get('Reason', 'AI Content')
+                }
         except Exception:
             # Channel not found = not flagged
-            return func.HttpResponse(
-                json.dumps({
-                    "flagged": False,
-                    "channelId": channel_id
-                }),
-                mimetype="application/json",
-                headers={"Access-Control-Allow-Origin": "*"},
-                status_code=200
-            )
+            pass
+        
+        return func.HttpResponse(
+            json.dumps({
+                "flagged": flagged,
+                "channelId": channel_id,
+                "votes": votes,
+                "details": details if flagged else None
+            }, default=str),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=200
+        )
             
     except Exception as e:
         logging.error(f"Error checking channel: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({"error": str(e)}),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=500
+        )
+
+@app.route(route="vote_channel", auth_level=func.AuthLevel.ANONYMOUS, methods=["POST", "OPTIONS"])
+def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Vote for a channel as AI content.
+    Usage: POST /api/vote_channel with JSON body: {"channelId": "UCxxxx", "channelName": "Optional Name"}
+    
+    Returns:
+    {
+        "success": true,
+        "votes": 124
+    }
+    """
+    # Handle CORS preflight
+    if req.method == "OPTIONS":
+        return func.HttpResponse(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            }
+        )
+    
+    logging.info('Vote channel API called')
+    
+    try:
+        req_body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid JSON body"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    channel_id = req_body.get('channelId')
+    channel_name = req_body.get('channelName', 'Unknown')
+    
+    if not channel_id:
+        return func.HttpResponse(
+            json.dumps({"error": "channelId is required"}),
+            mimetype="application/json",
+            status_code=400
+        )
+    
+    try:
+        table_client = get_table_client('ytsustable')
+        
+        # Try to get existing channel entity
+        try:
+            entity = table_client.get_entity(partition_key='channels', row_key=channel_id)
+            current_votes = entity.get('VoteCount', 0)
+            
+            # Update vote count
+            entity['VoteCount'] = current_votes + 1
+            entity['LastVoted'] = datetime.datetime.utcnow().isoformat() + 'Z'
+            if not entity.get('ChannelName'):
+                entity['ChannelName'] = channel_name
+            
+            table_client.update_entity(entity, mode='REPLACE')
+            new_votes = current_votes + 1
+            
+        except Exception:
+            # Create new channel entity with vote (not flagged by default)
+            entity = {
+                'PartitionKey': 'channels',
+                'RowKey': channel_id,
+                'VoteCount': 1,
+                'ChannelName': channel_name,
+                'Flagged': False,  # Requires manual review to flag
+                'FirstVoted': datetime.datetime.utcnow().isoformat() + 'Z',
+                'LastVoted': datetime.datetime.utcnow().isoformat() + 'Z',
+                'Reason': 'Community Reported AI Content'
+            }
+            table_client.create_entity(entity)
+            new_votes = 1
+        
+        logging.info(f"Channel {channel_id} voted, new count: {new_votes}")
+        
+        return func.HttpResponse(
+            json.dumps({
+                "success": True,
+                "channelId": channel_id,
+                "votes": new_votes
+            }),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=200
+        )
+            
+    except Exception as e:
+        logging.error(f"Error voting for channel: {str(e)}")
         return func.HttpResponse(
             json.dumps({"error": str(e)}),
             mimetype="application/json",

@@ -50,13 +50,18 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
     
     const apiFlaggedChannels = await response.json();
     console.log('Fetched from API:', Object.keys(apiFlaggedChannels).length, 'channels');
+    console.log('API Response:', apiFlaggedChannels);
     
     // Merge with existing locally flagged channels
-    const result = await chrome.storage.local.get(['highlightedChannels']);
+    const result = await chrome.storage.local.get(['highlightedChannels', 'channelVotes']);
     const localChannels = result.highlightedChannels || {};
+    const localVotes = result.channelVotes || {};
+    
+    console.log('Local channels before merge:', Object.keys(localChannels).length);
     
     // Convert API format to local format
     const mergedChannels = { ...localChannels };
+    const mergedVotes = { ...localVotes };
     
     for (const [channelId, data] of Object.entries(apiFlaggedChannels)) {
       if (!mergedChannels[channelId]) {
@@ -70,14 +75,21 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
           reason: data.reason
         };
       }
+      
+      // Update vote count from API
+      if (data.votes !== undefined) {
+        mergedVotes[channelId] = data.votes;
+      }
     }
     
     await chrome.storage.local.set({ 
       highlightedChannels: mergedChannels,
+      channelVotes: mergedVotes,
       lastAPISync: new Date().toISOString()
     });
     
     console.log('Merged channels:', Object.keys(mergedChannels).length, 'total');
+    console.log('Updated votes for', Object.keys(mergedVotes).length, 'channels');
     
     // Notify all YouTube tabs to update highlights
     notifyAllTabs(mergedChannels);

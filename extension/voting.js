@@ -1,6 +1,9 @@
 // Voting system for YouTube channels
 console.log('YouTube Voting System loaded');
 
+const API_URL = 'http://localhost:7071/api';
+// When deploying, change to: 'https://YOUR-FUNCTION-APP.azurewebsites.net/api'
+
 // Storage key for votes
 const VOTES_STORAGE_KEY = 'channelVotes';
 
@@ -10,17 +13,25 @@ let voteThreshold = 10;
 
 // Load settings
 async function loadVotingSettings() {
-  const result = await chrome.storage.local.get(['warningSettings']);
-  if (result.warningSettings && result.warningSettings.showVoting !== undefined) {
-    votingEnabled = result.warningSettings.showVoting;
+  try {
+    if (!chrome.storage) {
+      console.error('Chrome storage not available - extension context may be invalidated');
+      return;
+    }
+    const result = await chrome.storage.local.get(['warningSettings']);
+    if (result.warningSettings && result.warningSettings.showVoting !== undefined) {
+      votingEnabled = result.warningSettings.showVoting;
+    }
+    if (result.warningSettings && result.warningSettings.voteThreshold !== undefined) {
+      voteThreshold = result.warningSettings.voteThreshold;
+    }
+    console.log('Voting enabled:', votingEnabled, 'Threshold:', voteThreshold);
+  } catch (error) {
+    console.error('Error loading voting settings:', error);
   }
-  if (result.warningSettings && result.warningSettings.voteThreshold !== undefined) {
-    voteThreshold = result.warningSettings.voteThreshold;
-  }
-  console.log('Voting enabled:', votingEnabled, 'Threshold:', voteThreshold);
 }
 
-// Get all votes from storage
+// Get all votes from storage (cached)
 async function getVotes() {
   const result = await chrome.storage.local.get([VOTES_STORAGE_KEY]);
   return result[VOTES_STORAGE_KEY] || {};
@@ -31,18 +42,67 @@ async function saveVotes(votes) {
   await chrome.storage.local.set({ [VOTES_STORAGE_KEY]: votes });
 }
 
-// Get vote count for a channel
+// Get vote count for a channel from API
+async function getChannelVotesFromAPI(channelId) {
+  try {
+    const response = await fetch(`${API_URL}/check_channel?channelId=${encodeURIComponent(channelId)}`);
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`);
+    }
+    const data = await response.json();
+    return data.votes || 0;
+  } catch (error) {
+    console.error('Failed to get votes from API:', error);
+    // Fall back to local cache
+    const votes = await getVotes();
+    return votes[channelId] || 0;
+  }
+}
+
+// Get vote count for a channel (from cache)
 async function getChannelVotes(channelId) {
   const votes = await getVotes();
   return votes[channelId] || 0;
 }
 
-// Add an upvote for a channel
-async function upvoteChannel(channelId) {
-  const votes = await getVotes();
-  votes[channelId] = (votes[channelId] || 0) + 1;
-  await saveVotes(votes);
-  return votes[channelId];
+// Add an upvote for a channel (sends to API)
+async function upvoteChannel(channelId, channelName) {
+  try {
+    // Send vote to API
+    const response = await fetch(`${API_URL}/vote_channel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        channelId: channelId,
+        channelName: channelName
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API returned ${response.status}`);
+    }
+    
+    const data = await response.json();
+    const newVotes = data.votes;
+    
+    // Update local cache
+    const votes = await getVotes();
+    votes[channelId] = newVotes;
+    await saveVotes(votes);
+    
+    console.log(`Vote sent to API. Channel ${channelId} now has ${newVotes} votes`);
+    return newVotes;
+    
+  } catch (error) {
+    console.error('Failed to send vote to API, saving locally:', error);
+    // Fall back to local storage
+    const votes = await getVotes();
+    votes[channelId] = (votes[channelId] || 0) + 1;
+    await saveVotes(votes);
+    return votes[channelId];
+  }
 }
 
 // Check if user has voted for a channel (using session storage to track per-session)
@@ -65,117 +125,160 @@ function markAsVoted(channelId) {
 
 // Create and add voting button to channel header
 async function addVotingButton() {
-  // Check if voting is enabled
-  if (!votingEnabled) {
-    removeVotingButton();
-    return;
-  }
-  
-  // Check if we're on a channel page
-  const channelId = extractChannelIdFromPage();
-  if (!channelId) {
-    console.log('Not on a channel page, skipping vote button');
-    return;
-  }
-
-  // Find the flexible actions container
-  const actionsContainer = document.querySelector('yt-flexible-actions-view-model.yt-page-header-view-model__page-header-flexible-actions');
-  
-  if (!actionsContainer) {
-    console.log('Could not find actions container for vote button');
-    return;
-  }
-
-  // Check if button already exists
-  if (document.querySelector('.yt-ai-vote-button')) {
-    console.log('Vote button already exists');
-    return;
-  }
-
-  // Get current vote count
-  const voteCount = await getChannelVotes(channelId);
-  const hasVoted = hasVotedThisSession(channelId);
-
-  // Create vote button container
-  const voteButtonContainer = document.createElement('div');
-  voteButtonContainer.className = 'ytFlexibleActionsViewModelAction yt-ai-vote-button';
-
-  // Create button
-  const voteButton = document.createElement('button');
-  voteButton.className = 'yt-spec-button-shape-next yt-spec-button-shape-next--tonal yt-spec-button-shape-next--mono yt-spec-button-shape-next--size-m yt-spec-button-shape-next--enable-backdrop-filter-experiment';
-  voteButton.setAttribute('aria-label', hasVoted ? 'Already upvoted' : 'Upvote this channel');
-  voteButton.style.cursor = hasVoted ? 'default' : 'pointer';
-  
-  if (hasVoted) {
-    voteButton.style.opacity = '0.7';
-    voteButton.disabled = true;
-  }
-
-  // Button content
-  const buttonContent = document.createElement('div');
-  buttonContent.className = 'yt-spec-button-shape-next__button-text-content';
-  buttonContent.innerHTML = `
-    <span style="display: flex; align-items: center; gap: 6px;">
-      <span style="font-size: 18px;">🤖</span>
-      <span style="font-weight: 600;">Report AI Content:</span>
-      <span style="font-weight: 700; color: #ff4444;">${voteCount > 0 ? voteCount : '0'}</span>
-    </span>
-  `;
-  voteButton.appendChild(buttonContent);
-
-  // Touch feedback (for consistency with YouTube's design)
-  const touchFeedback = document.createElement('yt-touch-feedback-shape');
-  touchFeedback.setAttribute('aria-hidden', 'true');
-  touchFeedback.className = 'yt-spec-touch-feedback-shape yt-spec-touch-feedback-shape--touch-response';
-  touchFeedback.innerHTML = `
-    <div class="yt-spec-touch-feedback-shape__stroke"></div>
-    <div class="yt-spec-touch-feedback-shape__fill"></div>
-  `;
-  voteButton.appendChild(touchFeedback);
-
-  // Click handler
-  voteButton.addEventListener('click', async () => {
-    if (hasVotedThisSession(channelId)) {
-      console.log('Already voted for this channel in this session');
+  try {
+    console.log('=== addVotingButton called ===');
+    
+    // Check if voting is enabled
+    if (!votingEnabled) {
+      console.log('Voting is disabled, removing button');
+      removeVotingButton();
+      return;
+    }
+    
+    // Check if we're on a channel page
+    const channelId = extractChannelIdFromPage();
+    console.log('Extracted channel ID:', channelId);
+    
+    if (!channelId) {
+      console.log('Not on a channel page, skipping vote button');
       return;
     }
 
-    // Add vote
-    const newCount = await upvoteChannel(channelId);
+    // Find the flexible actions container
+    const actionsContainer = document.querySelector('yt-flexible-actions-view-model.yt-page-header-view-model__page-header-flexible-actions');
+    console.log('Actions container found:', actionsContainer);
     
-    // Mark as voted
-    markAsVoted(channelId);
-    
-    // Update button
-    buttonContent.innerHTML = `👍 ${newCount}`;
-    voteButton.style.opacity = '0.7';
-    voteButton.style.cursor = 'default';
-    voteButton.disabled = true;
-    voteButton.setAttribute('aria-label', 'Already upvoted');
-    
-    // Show feedback
-    showVoteFeedback(voteButton);
-    
-    console.log(`Upvoted channel ${channelId}, new count: ${newCount}`);
-    
-    // Check if threshold reached - auto-add to AI warning list
-    if (newCount >= voteThreshold) {
-      console.log(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
-      await addChannelToWarningList(channelId);
+    if (!actionsContainer) {
+      console.log('Could not find actions container for vote button');
+      console.log('Trying alternate selectors...');
+      
+      // Try alternate selector
+      const altContainer = document.querySelector('yt-flexible-actions-view-model');
+      console.log('Alternate container found:', altContainer);
+      
+      if (!altContainer) {
+        console.log('No suitable container found');
+        return;
+      }
+      
+      // Use alternate container
+      return await createAndInsertButton(altContainer, channelId);
     }
-  });
 
-  voteButtonContainer.appendChild(voteButton);
-  
-  // Insert button after Subscribe button (first action)
-  const firstAction = actionsContainer.querySelector('.ytFlexibleActionsViewModelAction');
-  if (firstAction && firstAction.nextSibling) {
-    actionsContainer.insertBefore(voteButtonContainer, firstAction.nextSibling);
-  } else {
-    actionsContainer.appendChild(voteButtonContainer);
+    await createAndInsertButton(actionsContainer, channelId);
+  } catch (error) {
+    console.error('Error in addVotingButton:', error);
   }
-  
-  console.log(`Vote button added for channel ${channelId} with ${voteCount} votes`);
+}
+
+async function createAndInsertButton(actionsContainer, channelId) {
+  try {
+    // Check if button already exists
+    if (document.querySelector('.yt-ai-vote-button')) {
+      console.log('Vote button already exists');
+      return;
+    }
+
+    console.log('Fetching vote count from API...');
+    // Get current vote count from API
+    const voteCount = await getChannelVotesFromAPI(channelId);
+    console.log('Vote count:', voteCount);
+    
+    // Update local cache with API value
+    const votes = await getVotes();
+    votes[channelId] = voteCount;
+    await saveVotes(votes);
+    
+    const hasVoted = hasVotedThisSession(channelId);
+    console.log('Has voted this session:', hasVoted);
+
+    // Create vote button container
+    const voteButtonContainer = document.createElement('div');
+    voteButtonContainer.className = 'ytFlexibleActionsViewModelAction yt-ai-vote-button';
+
+    // Create button
+    const voteButton = document.createElement('button');
+    voteButton.className = 'yt-spec-button-shape-next yt-spec-button-shape-next--tonal yt-spec-button-shape-next--mono yt-spec-button-shape-next--size-m yt-spec-button-shape-next--enable-backdrop-filter-experiment';
+    voteButton.setAttribute('aria-label', hasVoted ? 'Already upvoted' : 'Upvote this channel');
+    voteButton.style.cursor = hasVoted ? 'default' : 'pointer';
+    
+    if (hasVoted) {
+      voteButton.style.opacity = '0.7';
+      voteButton.disabled = true;
+    }
+
+    // Button content
+    const buttonContent = document.createElement('div');
+    buttonContent.className = 'yt-spec-button-shape-next__button-text-content';
+    buttonContent.innerHTML = `
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <span style="font-size: 18px;">🤖</span>
+        <span style="font-weight: 600;">Report AI Content:</span>
+        <span style="font-weight: 700; color: #ff4444;">${voteCount > 0 ? voteCount : '0'}</span>
+      </span>
+    `;
+    voteButton.appendChild(buttonContent);
+
+    // Touch feedback (for consistency with YouTube's design)
+    const touchFeedback = document.createElement('yt-touch-feedback-shape');
+    touchFeedback.setAttribute('aria-hidden', 'true');
+    touchFeedback.className = 'yt-spec-touch-feedback-shape yt-spec-touch-feedback-shape--touch-response';
+    touchFeedback.innerHTML = `
+      <div class="yt-spec-touch-feedback-shape__stroke"></div>
+      <div class="yt-spec-touch-feedback-shape__fill"></div>
+    `;
+    voteButton.appendChild(touchFeedback);
+    
+    // Get channel name for API vote
+    const channelNameElement = document.querySelector('#channel-name #text, .ytd-channel-name yt-formatted-string');
+    const channelName = channelNameElement?.textContent?.trim() || 'Unknown';
+
+    // Click handler
+    voteButton.addEventListener('click', async () => {
+      if (hasVotedThisSession(channelId)) {
+        console.log('Already voted for this channel in this session');
+        return;
+      }
+
+      // Add vote (sends to API)
+      const newCount = await upvoteChannel(channelId, channelName);
+      
+      // Mark as voted
+      markAsVoted(channelId);
+      
+      // Update button
+      buttonContent.innerHTML = `👍 ${newCount}`;
+      voteButton.style.opacity = '0.7';
+      voteButton.style.cursor = 'default';
+      voteButton.disabled = true;
+      voteButton.setAttribute('aria-label', 'Already upvoted');
+      
+      // Show feedback
+      showVoteFeedback(voteButton);
+      
+      console.log(`Upvoted channel ${channelId}, new count: ${newCount}`);
+      
+      // Check if threshold reached - auto-add to AI warning list
+      if (newCount >= voteThreshold) {
+        console.log(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
+        await addChannelToWarningList(channelId);
+      }
+    });
+
+    voteButtonContainer.appendChild(voteButton);
+    
+    // Insert button after Subscribe button (first action)
+    const firstAction = actionsContainer.querySelector('.ytFlexibleActionsViewModelAction');
+    if (firstAction && firstAction.nextSibling) {
+      actionsContainer.insertBefore(voteButtonContainer, firstAction.nextSibling);
+    } else {
+      actionsContainer.appendChild(voteButtonContainer);
+    }
+    
+    console.log(`Vote button added for channel ${channelId} with ${voteCount} votes`);
+  } catch (error) {
+    console.error('Error creating vote button:', error);
+  }
 }
 
 // Remove voting button
@@ -314,23 +417,35 @@ function extractChannelIdFromPage() {
 
 // Initialize voting system when on channel page
 async function initVoting() {
-  // Load settings
-  await loadVotingSettings();
-  
-  // Only run on channel pages
-  if (!window.location.pathname.match(/\/@|\/channel\/|\/c\/|\/user\//)) {
-    return;
+  try {
+    console.log('Initializing voting system...');
+    console.log('Current URL:', window.location.pathname);
+    
+    // Load settings
+    await loadVotingSettings();
+    
+    // Only run on channel pages
+    if (!window.location.pathname.match(/\/@|\/channel\/|\/c\/|\/user\//)) {
+      console.log('Not on a channel page, skipping voting button');
+      return;
+    }
+    
+    console.log('On channel page, will add voting button');
+    
+    // Wait for page to load
+    setTimeout(() => {
+      console.log('Attempting to add voting button (1s delay)');
+      addVotingButton();
+    }, 1000);
+    
+    // Also try again after a delay (for slow loading pages)
+    setTimeout(() => {
+      console.log('Attempting to add voting button again (2s delay)');
+      addVotingButton();
+    }, 2000);
+  } catch (error) {
+    console.error('Error initializing voting system:', error);
   }
-  
-  // Wait for page to load
-  setTimeout(() => {
-    addVotingButton();
-  }, 1000);
-  
-  // Also try again after a delay (for slow loading pages)
-  setTimeout(() => {
-    addVotingButton();
-  }, 2000);
 }
 
 // Listen for settings updates
