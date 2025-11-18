@@ -1,5 +1,5 @@
 // Voting system for YouTube channels
-const DEBUG_VOTING = false; // Set to true to enable debug logging
+const DEBUG_VOTING = true; // Set to true to enable debug logging
 const logVoting = DEBUG_VOTING ? console.log.bind(console) : () => {};
 const logVotingError = console.error.bind(console); // Always log errors
 

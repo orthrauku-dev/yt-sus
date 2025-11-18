@@ -1,5 +1,5 @@
 // Content script for YouTube pages
-const DEBUG_CONTENT = false; // Set to true to enable debug logging
+const DEBUG_CONTENT = true; // Set to true to enable debug logging
 const log = DEBUG_CONTENT ? console.log.bind(console) : () => {};
 const logError = console.error.bind(console); // Always log errors
 
@@ -13,6 +13,7 @@ let settings = {
 
 // Initialize by loading highlighted channels and settings
 async function init() {
+  log('=== init() called ===');
   const response = await chrome.runtime.sendMessage({ action: 'getHighlightedChannels' });
   highlightedChannels = response.channels || {};
   log('Loaded highlighted channels:', highlightedChannels);
@@ -24,30 +25,67 @@ async function init() {
   }
   log('Loaded settings:', settings);
   
-  // Don't call applyHighlights here - it will be triggered by yt-navigate-finish event
+  // Apply highlights on initial load
+  log('Calling applyHighlights from init');
+  applyHighlights();
 }
 
 // Extract channel ID from various YouTube URL formats
 function extractChannelId(url) {
   if (!url) return null;
   
-  // Match /channel/CHANNEL_ID format
-  const channelMatch = url.match(/\/channel\/([\w-]+)/);
-  if (channelMatch) return channelMatch[1];
-  
-  // Match /@handle format
+  // Handle @username format
   const handleMatch = url.match(/\/@([\w-]+)/);
   if (handleMatch) return `@${handleMatch[1]}`;
   
-  // Match /c/CUSTOM_NAME format
+  // Handle /channel/CHANNEL_ID format
+  const channelMatch = url.match(/\/channel\/([\w-]+)/);
+  if (channelMatch) return channelMatch[1];
+  
+  // Handle /c/CUSTOM_NAME format (less common now)
   const customMatch = url.match(/\/c\/([\w-]+)/);
   if (customMatch) return customMatch[1];
   
-  // Match /user/USERNAME format
+  // Handle /user/USERNAME format (old format)
   const userMatch = url.match(/\/user\/([\w-]+)/);
   if (userMatch) return userMatch[1];
   
   return null;
+}
+
+// Check if a channel is flagged by checking both channel ID and handle
+function isChannelFlagged(channelId) {
+  if (!channelId) return false;
+  
+  log('Checking if channel is flagged:', channelId);
+  log('Available keys in highlightedChannels:', Object.keys(highlightedChannels));
+  
+  // Direct match
+  if (highlightedChannels[channelId]) {
+    log('Direct match found for:', channelId);
+    return true;
+  }
+  
+  // If channelId is UC... format, also check if there's a handle match
+  // Loop through all flagged channels to find if any have this channel ID
+  for (const [key, channel] of Object.entries(highlightedChannels)) {
+    log(`Checking ${key}:`, channel);
+    
+    // Check if the stored channel has an 'id' property that matches
+    if (channel.id === channelId) {
+      log('Found match via channel.id property:', key);
+      return true;
+    }
+    
+    // Also check if the key itself contains the channel ID
+    if (key === channelId) {
+      log('Found match via key:', key);
+      return true;
+    }
+  }
+  
+  log('No match found for:', channelId);
+  return false;
 }
 
 // Extract channel name from element
@@ -246,19 +284,78 @@ async function checkVideoPage() {
     if (ownerLink) {
       const channelId = extractChannelId(ownerLink.href);
       
-      // Get channel name from the stored channel data
+      // Also try to find a link with the @handle format
+      // YouTube often has both /channel/UC... and /@handle links
+      let channelHandle = null;
+      
+      // First try to extract handle from the current link
+      const handleMatch = ownerLink.href.match(/\/@([\w-]+)/);
+      if (handleMatch) {
+        channelHandle = `@${handleMatch[1]}`;
+      } else {
+        // If current link doesn't have handle, search for another link with handle format
+        const handleLinkSelectors = [
+          'ytd-video-owner-renderer a[href*="/@"]',
+          '#owner a[href*="/@"]',
+          'ytd-channel-name a[href*="/@"]',
+          'ytd-watch-metadata a[href*="/@"]'
+        ];
+        
+        for (const selector of handleLinkSelectors) {
+          const handleLink = document.querySelector(selector);
+          if (handleLink) {
+            const match = handleLink.href.match(/\/@([\w-]+)/);
+            if (match) {
+              channelHandle = `@${match[1]}`;
+              log('Found handle link via selector:', selector, handleLink.href);
+              break;
+            }
+          }
+        }
+      }
+      
+      log('Extracted channel ID:', channelId);
+      log('Extracted channel handle:', channelHandle);
+      
+      // Get channel name from the DOM directly
       let channelNameText = '';
-      if (channelId && highlightedChannels[channelId]) {
+      
+      // Try multiple ways to get the channel name
+      const channelNameSelectors = [
+        'ytd-channel-name#channel-name yt-formatted-string a',
+        'ytd-channel-name yt-formatted-string',
+        '#channel-name yt-formatted-string',
+        'ytd-video-owner-renderer ytd-channel-name yt-formatted-string',
+        '#owner ytd-channel-name yt-formatted-string'
+      ];
+      
+      for (const selector of channelNameSelectors) {
+        const nameElement = document.querySelector(selector);
+        if (nameElement && nameElement.textContent) {
+          channelNameText = nameElement.textContent.trim();
+          log('Found channel name via selector:', selector, channelNameText);
+          break;
+        }
+      }
+      
+      // Fallback to stored channel data if DOM extraction fails
+      if (!channelNameText && channelId && highlightedChannels[channelId]) {
         channelNameText = highlightedChannels[channelId].name || '';
+        log('Using stored channel name:', channelNameText);
       }
       
       // Store the channel name
       currentVideoChannelName = channelNameText;
       
       log('Video page - Channel ID:', channelId);
+      log('Video page - Channel Handle:', channelHandle);
       log('Video page - Channel Name:', currentVideoChannelName);
       
-      if (channelId && highlightedChannels[channelId]) {
+      // Check both channel ID and handle
+      const isFlagged = isChannelFlagged(channelId) || (channelHandle && isChannelFlagged(channelHandle));
+      log('Is channel flagged?', isFlagged);
+      
+      if (isFlagged) {
         log('Video is from highlighted channel, adding warning to title');
         
         // Find the video title
