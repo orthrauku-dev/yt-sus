@@ -190,6 +190,7 @@ async function applyHighlights() {
 // Store the current video's channel info
 let currentVideoChannelName = null;
 let currentVideoChannelId = null;
+let currentVideoId = null; // Track which video we've processed
 
 // Check if we're on a video page and add warning to title if channel is highlighted
 async function checkVideoPage() {
@@ -225,6 +226,23 @@ async function checkVideoPage() {
     return;
   }
   
+  // Get the video ID from URL to prevent processing the same video twice
+  const urlParams = new URLSearchParams(window.location.search);
+  const videoId = urlParams.get('v');
+  
+  if (!videoId) {
+    log('No video ID in URL');
+    return;
+  }
+  
+  // If we already processed this video, skip (prevents double-processing on same navigation)
+  if (videoId === currentVideoId) {
+    log('Already processed video:', videoId);
+    return;
+  }
+  
+  log('Processing video:', videoId);
+  
   // Wait for video metadata AND owner section to load
   log('Waiting for video page elements to load...');
   const metadata = await waitForElement('ytd-watch-metadata', 5000);
@@ -239,7 +257,8 @@ async function checkVideoPage() {
     return;
   }
   
-  // Find video owner channel link - try multiple selectors
+  // CRITICAL: YouTube's SPA may have stale channel data in the DOM briefly
+  // We need to verify the channel info is stable before processing
   const ownerLinkSelectors = [
     'ytd-watch-metadata ytd-channel-name a',
     'ytd-channel-name#channel-name a',
@@ -258,15 +277,47 @@ async function checkVideoPage() {
     'ytd-video-secondary-info-renderer #channel-name a'
   ];
   
-  let ownerLink = null;
-  for (const selector of ownerLinkSelectors) {
-    ownerLink = document.querySelector(selector);
-    if (ownerLink) {
-      log('Found owner link with selector:', selector, ownerLink.href);
-      break;
+  // Helper function to find owner link
+  const findOwnerLink = () => {
+    for (const selector of ownerLinkSelectors) {
+      const link = document.querySelector(selector);
+      if (link) return link;
     }
+    return null;
+  };
+  
+  // Get initial channel link
+  let ownerLink = findOwnerLink();
+  if (!ownerLink) {
+    log('Could not find channel owner link on first attempt');
+    return;
   }
   
+  const firstChannelHref = ownerLink.href;
+  log('First channel link found:', firstChannelHref);
+  
+  // Wait and verify the channel hasn't changed (DOM has stabilized)
+  await new Promise(resolve => setTimeout(resolve, 300));
+  
+  ownerLink = findOwnerLink();
+  if (!ownerLink) {
+    log('Channel link disappeared during stabilization wait');
+    return;
+  }
+  
+  const secondChannelHref = ownerLink.href;
+  log('Second channel link found:', secondChannelHref);
+  
+  // If the channel changed during our wait, the DOM hasn't stabilized yet - bail out
+  if (firstChannelHref !== secondChannelHref) {
+    log('Channel info changed during wait - DOM not stable, resetting currentVideoId');
+    currentVideoId = null; // Allow retry on next navigation event
+    return;
+  }
+  
+  log('Channel info stable, proceeding with:', ownerLink.href);
+  
+  // Additional check removed as we now verify stability above
   if (!ownerLink) {
     log('Could not find channel owner link with specific selectors');
     log('Available ytd-channel-name elements:', document.querySelectorAll('ytd-channel-name').length);
@@ -357,6 +408,7 @@ async function checkVideoPage() {
   // Store the channel info for current video
   currentVideoChannelName = channelNameText;
   currentVideoChannelId = channelId;
+  currentVideoId = videoId; // Mark this video as processed
   
   log('Video page - Channel ID:', channelId);
   log('Video page - Channel Handle:', channelHandle);
@@ -553,6 +605,10 @@ if (document.readyState === 'loading') {
 // Clean up stale warnings immediately when navigation starts
 document.addEventListener('yt-navigate-start', () => {
   log('YouTube navigation starting, removing any stale warnings');
+  
+  // Reset the current video ID so the next video can be processed
+  currentVideoId = null;
+  
   // Immediately remove all video warnings to prevent carryover
   const videoTitleSelectors = [
     'ytd-watch-metadata h1.ytd-watch-metadata yt-formatted-string',
