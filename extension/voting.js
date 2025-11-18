@@ -1,8 +1,7 @@
 // Voting system for YouTube channels
 console.log('YouTube Voting System loaded');
 
-const API_URL = 'http://localhost:7071/api';
-// When deploying, change to: 'https://YOUR-FUNCTION-APP.azurewebsites.net/api'
+const API_URL = 'https://yt-sus-func-eyamhschcdg3dcbx.eastus-01.azurewebsites.net/api';
 
 // Storage key for votes
 const VOTES_STORAGE_KEY = 'channelVotes';
@@ -156,7 +155,10 @@ async function upvoteChannel(channelId, channelName) {
       return newVotes;
     }
     
-    throw new Error('Failed to vote via background script');
+    // Log the actual error from background script
+    const errorMsg = response?.error || 'Unknown error from background script';
+    console.error('Background script vote failed:', errorMsg, response);
+    throw new Error(`Failed to vote via background script: ${errorMsg}`);
     
   } catch (error) {
     console.error('Failed to send vote to API, saving locally:', error);

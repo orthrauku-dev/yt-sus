@@ -1,8 +1,7 @@
 // Background service worker
 console.log('YouTube Sentiment Warning background script loaded');
 
-const API_BASE_URL = 'http://localhost:7071/api';
-// When deploying, change to: 'https://YOUR-FUNCTION-APP.azurewebsites.net/api'
+const API_BASE_URL = 'https://yt-sus-func-eyamhschcdg3dcbx.eastus-01.azurewebsites.net/api';
 
 // Initialize the database when extension is installed
 chrome.runtime.onInstalled.addListener(async () => {
@@ -329,7 +328,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'voteChannel') {
     // Handle API call from content script to avoid CORS
     const { channelId, channelName } = request;
-    fetch(`${API_BASE_URL}/vote_channel`, {
+    const voteUrl = `${API_BASE_URL}/vote_channel`;
+    console.log('Voting via API:', voteUrl, { channelId, channelName });
+    
+    fetch(voteUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -342,12 +344,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
     })
       .then(response => {
+        console.log('Vote API response status:', response.status);
         if (!response.ok) {
-          throw new Error(`API returned ${response.status}`);
+          return response.text().then(text => {
+            console.error('Vote API error response:', text);
+            throw new Error(`API returned ${response.status}: ${text}`);
+          });
         }
         return response.json();
       })
       .then(data => {
+        console.log('Vote API success:', data);
         sendResponse({ success: true, votes: data.votes || 0 });
       })
       .catch(error => {

@@ -53,66 +53,100 @@ function extractChannelName(element) {
   return nameElement?.textContent?.trim() || 'Unknown Channel';
 }
 
+// Wait for an element to exist, with timeout
+function waitForElement(selector, timeout = 5000) {
+  return new Promise((resolve) => {
+    // Check if element already exists
+    const element = document.querySelector(selector);
+    if (element) {
+      resolve(element);
+      return;
+    }
+    
+    // Set up observer to watch for element
+    const observer = new MutationObserver(() => {
+      const element = document.querySelector(selector);
+      if (element) {
+        observer.disconnect();
+        resolve(element);
+      }
+    });
+    
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    // Timeout fallback
+    setTimeout(() => {
+      observer.disconnect();
+      resolve(null);
+    }, timeout);
+  });
+}
+
 // Apply highlights to channel elements
-function applyHighlights() {
+async function applyHighlights() {
   console.log('Applying highlights...');
   console.log('Highlighted channels:', highlightedChannels);
   
-  // Try multiple selectors for channel header (YouTube changes their structure)
-  const selectors = [
-    '#channel-header',
-    'ytd-c4-tabbed-header-renderer',
-    'ytd-page-header-renderer',
-    '#page-header',
-    'yt-page-header-renderer',
-    '.page-header-view-model-wiz'
-  ];
+  // Check if we're on a video page (don't try to highlight channel header on video pages)
+  const isVideoPage = window.location.pathname.startsWith('/watch');
   
-  let channelHeader = null;
-  for (const selector of selectors) {
-    channelHeader = document.querySelector(selector);
-    if (channelHeader) {
-      console.log('Channel header found with selector:', selector);
-      break;
-    }
-  }
-  
-  console.log('Channel header element found:', channelHeader);
-  
-  if (channelHeader) {
-    // First, always unhighlight to clear any previous state
-    unhighlightElement(channelHeader);
+  if (!isVideoPage) {
+    // Wait for channel header to exist on channel pages
+    const channelHeaderSelectors = [
+      'ytd-page-header-renderer',
+      'ytd-c4-tabbed-header-renderer',
+      '#page-header'
+    ];
     
-    const channelLink = channelHeader.querySelector('a[href*="/channel/"], a[href*="/@"], a.yt-simple-endpoint[href*="/@"]');
-    console.log('Channel link found:', channelLink);
-    console.log('Channel link href:', channelLink?.href);
-    
-    if (channelLink) {
-      const channelId = extractChannelId(channelLink.href);
-      console.log('Extracted channel ID:', channelId);
-      console.log('Is highlighted?:', highlightedChannels[channelId]);
-      
-      if (channelId && highlightedChannels[channelId]) {
-        console.log('CALLING highlightElement for channel:', channelId);
-        highlightElement(channelHeader);
-      } else {
-        console.log('Channel not in highlighted list or no ID found');
+    let channelHeader = null;
+    for (const selector of channelHeaderSelectors) {
+      channelHeader = await waitForElement(selector, 3000);
+      if (channelHeader) {
+        console.log('Channel header found with selector:', selector);
+        break;
       }
-    } else {
-      console.log('No channel link found in header');
-      // Try alternate approach - get from URL
-      if (window.location.pathname.includes('/@') || window.location.pathname.includes('/channel/')) {
-        const channelId = extractChannelId(window.location.href);
-        console.log('Got channel ID from URL:', channelId);
+    }
+    
+    console.log('Channel header element found:', channelHeader);
+    
+    if (channelHeader) {
+      // First, always unhighlight to clear any previous state
+      unhighlightElement(channelHeader);
+      
+      const channelLink = channelHeader.querySelector('a[href*="/channel/"], a[href*="/@"], a.yt-simple-endpoint[href*="/@"]');
+      console.log('Channel link found:', channelLink);
+      console.log('Channel link href:', channelLink?.href);
+      
+      if (channelLink) {
+        const channelId = extractChannelId(channelLink.href);
+        console.log('Extracted channel ID:', channelId);
+        console.log('Is highlighted?:', highlightedChannels[channelId]);
+        
         if (channelId && highlightedChannels[channelId]) {
+          console.log('CALLING highlightElement for channel:', channelId);
           highlightElement(channelHeader);
+        } else {
+          console.log('Channel not in highlighted list or no ID found');
+        }
+      } else {
+        console.log('No channel link found in header');
+        // Try alternate approach - get from URL
+        if (window.location.pathname.includes('/@') || window.location.pathname.includes('/channel/')) {
+          const channelId = extractChannelId(window.location.href);
+          console.log('Got channel ID from URL:', channelId);
+          if (channelId && highlightedChannels[channelId]) {
+            highlightElement(channelHeader);
+          }
         }
       }
+    } else {
+      console.log('No channel header found - might not be on a channel page');
+      console.log('Page URL:', window.location.href);
+      console.log('Available elements:', document.querySelectorAll('[id*="header"], [class*="header"]').length);
     }
-  } else {
-    console.log('No channel header found - might not be on a channel page');
-    console.log('Page URL:', window.location.href);
-    console.log('Available elements:', document.querySelectorAll('[id*="header"], [class*="header"]').length);
   }
   
   // Also check for video pages and add warning to video title
@@ -123,14 +157,91 @@ function applyHighlights() {
 let currentVideoChannelName = null;
 
 // Check if we're on a video page and add warning to title if channel is highlighted
-function checkVideoPage() {
+async function checkVideoPage() {
   // Check if video title warnings are enabled
   if (settings.showVideoTitle) {
-    // Find video owner channel link
-    const ownerLink = document.querySelector('ytd-watch-metadata a.yt-simple-endpoint[href*="/@"], ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]');
+    // Wait for video metadata section to load (contains channel link)
+    await waitForElement('ytd-watch-metadata', 3000);
+    
+    // Find video owner channel link - try multiple selectors
+    const ownerLinkSelectors = [
+      'ytd-watch-metadata ytd-channel-name a',
+      'ytd-channel-name#channel-name a',
+      '#owner ytd-channel-name a',
+      'ytd-watch-metadata a.yt-simple-endpoint[href*="/@"]',
+      'ytd-watch-metadata a.yt-simple-endpoint[href*="/channel/"]',
+      'ytd-channel-name a[href*="/@"]',
+      'ytd-channel-name a[href*="/channel/"]',
+      '#owner a[href*="/@"]',
+      '#owner a[href*="/channel/"]',
+      'ytd-video-owner-renderer a[href*="/@"]',
+      'ytd-video-owner-renderer a[href*="/channel/"]',
+      // More specific selectors for newer YouTube layout
+      '#owner #channel-name a',
+      '#below ytd-channel-name a',
+      'ytd-video-secondary-info-renderer #channel-name a'
+    ];
+    
+    let ownerLink = null;
+    for (const selector of ownerLinkSelectors) {
+      ownerLink = document.querySelector(selector);
+      if (ownerLink) {
+        console.log('Found owner link with selector:', selector, ownerLink.href);
+        break;
+      }
+    }
+    
+    if (!ownerLink) {
+      console.log('Could not find channel owner link with specific selectors');
+      console.log('Available ytd-channel-name elements:', document.querySelectorAll('ytd-channel-name').length);
+      
+      // Try to find channel links NOT in the video player
+      const allChannelLinks = Array.from(document.querySelectorAll('a[href*="/@"], a[href*="/channel/"]'));
+      console.log('Total channel links on page:', allChannelLinks.length);
+      
+      const nonPlayerLinks = allChannelLinks.filter(link => !link.closest('.ytp-ce-element')); // Exclude video player end screen
+      console.log('Available channel links (excluding video player):', nonPlayerLinks.length);
+      
+      if (allChannelLinks.length > 0) {
+        console.log('First 3 channel links:');
+        allChannelLinks.slice(0, 3).forEach((link, i) => {
+          console.log(`  ${i + 1}. href: ${link.href}`);
+          console.log(`     class: ${link.className}`);
+          console.log(`     parent: ${link.parentElement?.tagName}.${link.parentElement?.className}`);
+          console.log(`     in player: ${!!link.closest('.ytp-ce-element')}`);
+        });
+      }
+      
+      if (nonPlayerLinks.length > 0) {
+        ownerLink = nonPlayerLinks[0];
+        console.log('Using first non-player channel link as fallback:', ownerLink.href);
+      } else {
+        console.log('All channel links are in video player - DOM may not be ready yet');
+        console.log('ytd-watch-metadata exists:', !!document.querySelector('ytd-watch-metadata'));
+        console.log('#owner exists:', !!document.querySelector('#owner'));
+        console.log('#below exists:', !!document.querySelector('#below'));
+      }
+    }
+    
+    // Try multiple selectors for video title
+    const videoTitleSelectors = [
+      'ytd-watch-metadata h1.ytd-watch-metadata yt-formatted-string',
+      'h1.ytd-watch-metadata yt-formatted-string',
+      'ytd-watch-metadata yt-formatted-string.ytd-watch-metadata',
+      'h1 yt-formatted-string',
+      '#title h1 yt-formatted-string'
+    ];
+    
+    let videoTitle = null;
+    for (const selector of videoTitleSelectors) {
+      videoTitle = document.querySelector(selector);
+      if (videoTitle) {
+        console.log('Found video title with selector:', selector);
+        break;
+      }
+    }
     
     // Always remove existing warning first to avoid stale warnings
-    const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
     if (videoTitle) {
       const existingWarning = videoTitle.querySelector('.yt-ai-warning');
       if (existingWarning) {
@@ -175,16 +286,31 @@ function checkVideoPage() {
           
           videoTitle.appendChild(warning);
           console.log('Warning added to video title');
+        } else if (!videoTitle) {
+          console.log('Could not find video title element');
         }
       }
+    } else {
+      console.log('Could not find channel owner link');
     }
   } else {
-    // Remove warning if setting is disabled
-    const videoTitle = document.querySelector('ytd-watch-metadata yt-formatted-string.ytd-watch-metadata');
-    if (videoTitle) {
-      const existingWarning = videoTitle.querySelector('.yt-ai-warning');
-      if (existingWarning) {
-        existingWarning.remove();
+    // Remove warning if setting is disabled - try multiple selectors
+    const videoTitleSelectors = [
+      'ytd-watch-metadata h1.ytd-watch-metadata yt-formatted-string',
+      'h1.ytd-watch-metadata yt-formatted-string',
+      'ytd-watch-metadata yt-formatted-string.ytd-watch-metadata',
+      'h1 yt-formatted-string',
+      '#title h1 yt-formatted-string'
+    ];
+    
+    for (const selector of videoTitleSelectors) {
+      const videoTitle = document.querySelector(selector);
+      if (videoTitle) {
+        const existingWarning = videoTitle.querySelector('.yt-ai-warning');
+        if (existingWarning) {
+          existingWarning.remove();
+          break;
+        }
       }
     }
   }
@@ -334,5 +460,5 @@ if (document.readyState === 'loading') {
 // Listen for YouTube's custom navigation event instead of MutationObserver
 document.addEventListener('yt-navigate-finish', () => {
   console.log('YouTube navigation finished, re-applying highlights');
-  applyHighlights();
+  applyHighlights(); // No delay needed - function waits for elements internally
 });

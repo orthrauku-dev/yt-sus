@@ -10,7 +10,7 @@
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://youtube.com/*",
-    "http://localhost:7071/*"
+    "https://yt-sus-func-eyamhschcdg3dcbx.eastus-01.azurewebsites.net/*"
   ],
   "action": {
     "default_popup": "popup.html",
