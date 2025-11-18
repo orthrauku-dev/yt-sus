@@ -154,10 +154,12 @@ async function upvoteChannel(channelId, channelName) {
       );
       
       if (!userConsent) {
+        // User declined - don't save anything, they'll be prompted again next time
+        logVoting('User declined consent - will be prompted again on next vote attempt');
         throw new Error('User declined data collection consent');
       }
       
-      // Save consent
+      // Save consent only if user agreed
       await chrome.storage.local.set({ votingConsent: true });
       logVoting('User consented to data collection');
     }
@@ -196,8 +198,15 @@ async function upvoteChannel(channelId, channelName) {
     throw new Error(`Failed to vote via background script: ${errorMsg}`);
     
   } catch (error) {
-    logVotingError('Failed to send vote to API, saving locally:', error);
-    // Fall back to local storage
+    // If user declined consent, that's a valid choice - not an error
+    if (error.message && error.message.includes('declined data collection consent')) {
+      logVoting('User declined consent - vote cancelled');
+      throw error; // Re-throw to propagate to UI (will be handled silently there)
+    }
+    
+    // For actual errors, log them and fall back to local storage
+    logVotingError('Failed to send vote to API:', error);
+    logVotingError('Saving vote locally as fallback');
     const votes = await getVotes();
     votes[channelId] = (votes[channelId] || 0) + 1;
     await saveVotes(votes);
@@ -428,13 +437,21 @@ async function createAndInsertButton(actionsContainer, channelId, channelName) {
           await addChannelToWarningList(channelId, newCount);
         }
       } catch (error) {
-        logVotingError('Error voting:', error);
         // Restore original content on error
         buttonContent.innerHTML = originalContent;
         voteButton.disabled = false;
         voteButton.style.cursor = 'pointer';
         
-        // Show error feedback
+        // Check if user declined consent (don't show error message for this)
+        if (error.message && error.message.includes('declined data collection consent')) {
+          logVoting('User declined consent, vote cancelled silently');
+          return; // Exit silently without showing error feedback or logging error
+        }
+        
+        // Only log actual errors (not user declining consent)
+        logVotingError('Error voting:', error);
+        
+        // Show error feedback for other errors
         const errorMsg = document.createElement('div');
         errorMsg.textContent = '✗ Failed';
         errorMsg.style.position = 'absolute';
