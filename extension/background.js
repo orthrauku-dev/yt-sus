@@ -1,11 +1,15 @@
 // Background service worker
-console.log('YouTube Sentiment Warning background script loaded');
+const DEBUG_BACKGROUND = false; // Set to true to enable debug logging
+const logBg = DEBUG_BACKGROUND ? console.log.bind(console) : () => {};
+const logBgError = console.error.bind(console); // Always log errors
+
+logBg('YouTube Sentiment Warning background script loaded');
 
 const API_BASE_URL = 'https://yt-sus-func-eyamhschcdg3dcbx.eastus-01.azurewebsites.net/api';
 
 // Initialize the database when extension is installed
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log('Extension installed, initializing database...');
+  logBg('Extension installed, initializing database...');
   await chrome.storage.local.set({ 
     highlightedChannels: {},
     apiSyncEnabled: true  // API sync enabled by default
@@ -23,7 +27,7 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
       const apiSyncEnabled = result.apiSyncEnabled !== false;
       
       if (!apiSyncEnabled) {
-        console.log('API sync is disabled, skipping');
+        logBg('API sync is disabled, skipping');
         return;
       }
       
@@ -34,13 +38,13 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
         
         // Only sync if more than 24 hours have passed
         if (hoursSinceSync < 24) {
-          console.log(`Last sync was ${hoursSinceSync.toFixed(1)} hours ago, skipping sync`);
+          logBg(`Last sync was ${hoursSinceSync.toFixed(1)} hours ago, skipping sync`);
           return;
         }
       }
     }
     
-    console.log('Fetching flagged channels from API...');
+    logBg('Fetching flagged channels from API...');
     const response = await fetch(`${API_BASE_URL}/flagged_channels`);
     
     if (!response.ok) {
@@ -48,15 +52,15 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
     }
     
     const apiFlaggedChannels = await response.json();
-    console.log('Fetched from API:', Object.keys(apiFlaggedChannels).length, 'channels');
-    console.log('API Response:', apiFlaggedChannels);
+    logBg('Fetched from API:', Object.keys(apiFlaggedChannels).length, 'channels');
+    logBg('API Response:', apiFlaggedChannels);
     
     // Merge with existing locally flagged channels
     const result = await chrome.storage.local.get(['highlightedChannels', 'channelVotes']);
     const localChannels = result.highlightedChannels || {};
     const localVotes = result.channelVotes || {};
     
-    console.log('Local channels before merge:', Object.keys(localChannels).length);
+    logBg('Local channels before merge:', Object.keys(localChannels).length);
     
     // Convert API format to local format
     const mergedChannels = { ...localChannels };
@@ -92,13 +96,13 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
       lastAPISync: new Date().toISOString()
     });
     
-    console.log('Merged channels:', Object.keys(mergedChannels).length, 'total');
-    console.log('Updated votes for', Object.keys(mergedVotes).length, 'channels');
+    logBg('Merged channels:', Object.keys(mergedChannels).length, 'total');
+    logBg('Updated votes for', Object.keys(mergedVotes).length, 'channels');
     
     // Notify all YouTube tabs to update highlights
     notifyAllTabs(mergedChannels);
   } catch (error) {
-    console.error('Failed to fetch from API:', error);
+    logBgError('Failed to fetch from API:', error);
   }
 }
 
@@ -109,7 +113,7 @@ function notifyAllTabs(channels) {
       chrome.tabs.sendMessage(tab.id, { 
         action: 'updateHighlights',
         channels: channels 
-      }).catch(err => console.log('Could not send message to tab:', err));
+      }).catch(err => logBg('Could not send message to tab:', err));
     });
   });
 }
@@ -120,12 +124,12 @@ async function shouldSync() {
   const apiSyncEnabled = result.apiSyncEnabled !== false;
   
   if (!apiSyncEnabled) {
-    console.log('API sync is disabled');
+    logBg('API sync is disabled');
     return false;
   }
   
   if (!result.lastAPISync) {
-    console.log('No previous sync, should sync now');
+    logBg('No previous sync, should sync now');
     return true;
   }
   
@@ -135,11 +139,11 @@ async function shouldSync() {
   
   // Sync if more than 24 hours have passed
   if (hoursSinceSync >= 24) {
-    console.log(`Last sync was ${hoursSinceSync.toFixed(1)} hours ago, syncing now`);
+    logBg(`Last sync was ${hoursSinceSync.toFixed(1)} hours ago, syncing now`);
     return true;
   }
   
-  console.log(`Last sync was ${hoursSinceSync.toFixed(1)} hours ago, skipping sync`);
+  logBg(`Last sync was ${hoursSinceSync.toFixed(1)} hours ago, skipping sync`);
   return false;
 }
 
@@ -158,7 +162,7 @@ scheduledSyncCheck();
 
 // Listen for messages from content script and popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Background received message:', request);
+  logBg('Background received message:', request);
   
   if (request.action === 'getHighlightedChannels') {
     chrome.storage.local.get('highlightedChannels', (result) => {
@@ -203,7 +207,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       
       if (channels[channelId]) {
         delete channels[channelId];
-        console.log('Channel removed:', channelId);
+        logBg('Channel removed:', channelId);
       } else {
         channels[channelId] = {
           id: channelId,
@@ -213,7 +217,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           highlighted: true,
           autoAdded: false  // Manually added
         };
-        console.log('Channel added manually:', channelId);
+        logBg('Channel added manually:', channelId);
       }
       
       await chrome.storage.local.set({ highlightedChannels: channels });
@@ -242,7 +246,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           autoAdded: true,  // Auto-added via voting threshold
           votes: votes || 0
         };
-        console.log(`Channel added via voting (auto-added): ${channelId} with ${votes} votes`);
+        logBg(`Channel added via voting (auto-added): ${channelId} with ${votes} votes`);
         
         await chrome.storage.local.set({ highlightedChannels: channels });
         
@@ -251,7 +255,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         sendResponse({ success: true });
       } else {
-        console.log('Channel already in list:', channelId);
+        logBg('Channel already in list:', channelId);
         sendResponse({ success: false, reason: 'already_exists' });
       }
     });
@@ -319,7 +323,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: true, votes: data.votes || 0 });
       })
       .catch(error => {
-        console.error('Failed to get votes from API:', error);
+        logBgError('Failed to get votes from API:', error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Keep message channel open for async response
@@ -329,7 +333,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Handle API call from content script to avoid CORS
     const { channelId, channelName } = request;
     const voteUrl = `${API_BASE_URL}/vote_channel`;
-    console.log('Voting via API:', voteUrl, { channelId, channelName });
+    logBg('Voting via API:', voteUrl, { channelId, channelName });
     
     fetch(voteUrl, {
       method: 'POST',
@@ -344,21 +348,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       })
     })
       .then(response => {
-        console.log('Vote API response status:', response.status);
+        logBg('Vote API response status:', response.status);
         if (!response.ok) {
           return response.text().then(text => {
-            console.error('Vote API error response:', text);
+            logBgError('Vote API error response:', text);
             throw new Error(`API returned ${response.status}: ${text}`);
           });
         }
         return response.json();
       })
       .then(data => {
-        console.log('Vote API success:', data);
+        logBg('Vote API success:', data);
         sendResponse({ success: true, votes: data.votes || 0 });
       })
       .catch(error => {
-        console.error('Failed to vote via API:', error);
+        logBgError('Failed to vote via API:', error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Keep message channel open for async response
@@ -368,6 +372,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Listen for storage changes
 chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local' && changes.highlightedChannels) {
-    console.log('Highlighted channels updated:', changes.highlightedChannels.newValue);
+    logBg('Highlighted channels updated:', changes.highlightedChannels.newValue);
   }
 });
