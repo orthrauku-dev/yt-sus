@@ -1,5 +1,9 @@
 // Content script for YouTube pages
-console.log('YouTube AI Content Warning content script loaded');
+const DEBUG = false; // Set to true to enable debug logging
+const log = DEBUG ? console.log.bind(console) : () => {};
+const logError = console.error.bind(console); // Always log errors
+
+log('YouTube AI Content Warning content script loaded');
 
 let highlightedChannels = {};
 let settings = {
@@ -11,14 +15,14 @@ let settings = {
 async function init() {
   const response = await chrome.runtime.sendMessage({ action: 'getHighlightedChannels' });
   highlightedChannels = response.channels || {};
-  console.log('Loaded highlighted channels:', highlightedChannels);
+  log('Loaded highlighted channels:', highlightedChannels);
   
   // Load settings
   const settingsResult = await chrome.storage.local.get(['warningSettings']);
   if (settingsResult.warningSettings) {
     settings = settingsResult.warningSettings;
   }
-  console.log('Loaded settings:', settings);
+  log('Loaded settings:', settings);
   
   // Don't call applyHighlights here - it will be triggered by yt-navigate-finish event
 }
@@ -87,8 +91,8 @@ function waitForElement(selector, timeout = 5000) {
 
 // Apply highlights to channel elements
 async function applyHighlights() {
-  console.log('Applying highlights...');
-  console.log('Highlighted channels:', highlightedChannels);
+  log('Applying highlights...');
+  log('Highlighted channels:', highlightedChannels);
   
   // Check if we're on a video page (don't try to highlight channel header on video pages)
   const isVideoPage = window.location.pathname.startsWith('/watch');
@@ -98,46 +102,46 @@ async function applyHighlights() {
     // Try all selectors at once with a combined selector
     const channelHeaderSelector = 'ytd-page-header-renderer, ytd-c4-tabbed-header-renderer, #page-header';
     
-    console.log('Waiting for channel header...');
+    log('Waiting for channel header...');
     const channelHeader = await waitForElement(channelHeaderSelector, 3000);
-    console.log('Channel header found:', !!channelHeader);
+    log('Channel header found:', !!channelHeader);
     
     if (channelHeader) {
-      console.log('Channel header element:', channelHeader.tagName, channelHeader.id);
+      log('Channel header element:', channelHeader.tagName, channelHeader.id);
       
       // First, always unhighlight to clear any previous state
       unhighlightElement(channelHeader);
       
       const channelLink = channelHeader.querySelector('a[href*="/channel/"], a[href*="/@"], a.yt-simple-endpoint[href*="/@"]');
-      console.log('Channel link found:', channelLink);
-      console.log('Channel link href:', channelLink?.href);
+      log('Channel link found:', channelLink);
+      log('Channel link href:', channelLink?.href);
       
       if (channelLink) {
         const channelId = extractChannelId(channelLink.href);
-        console.log('Extracted channel ID:', channelId);
-        console.log('Is highlighted?:', highlightedChannels[channelId]);
+        log('Extracted channel ID:', channelId);
+        log('Is highlighted?:', highlightedChannels[channelId]);
         
         if (channelId && highlightedChannels[channelId]) {
-          console.log('CALLING highlightElement for channel:', channelId);
+          log('CALLING highlightElement for channel:', channelId);
           highlightElement(channelHeader);
         } else {
-          console.log('Channel not in highlighted list or no ID found');
+          log('Channel not in highlighted list or no ID found');
         }
       } else {
-        console.log('No channel link found in header');
+        log('No channel link found in header');
         // Try alternate approach - get from URL
         if (window.location.pathname.includes('/@') || window.location.pathname.includes('/channel/')) {
           const channelId = extractChannelId(window.location.href);
-          console.log('Got channel ID from URL:', channelId);
+          log('Got channel ID from URL:', channelId);
           if (channelId && highlightedChannels[channelId]) {
             highlightElement(channelHeader);
           }
         }
       }
     } else {
-      console.log('No channel header found - might not be on a channel page');
-      console.log('Page URL:', window.location.href);
-      console.log('Available elements:', document.querySelectorAll('[id*="header"], [class*="header"]').length);
+      log('No channel header found - might not be on a channel page');
+      log('Page URL:', window.location.href);
+      log('Available elements:', document.querySelectorAll('[id*="header"], [class*="header"]').length);
     }
   }
   
@@ -153,16 +157,16 @@ async function checkVideoPage() {
   // Check if video title warnings are enabled
   if (settings.showVideoTitle) {
     // Wait for video metadata AND owner section to load
-    console.log('Waiting for video page elements to load...');
+    log('Waiting for video page elements to load...');
     const metadata = await waitForElement('ytd-watch-metadata', 5000);
-    console.log('ytd-watch-metadata loaded:', !!metadata);
+    log('ytd-watch-metadata loaded:', !!metadata);
     
     // Also wait specifically for #owner which contains the channel link
     const owner = await waitForElement('#owner', 5000);
-    console.log('#owner loaded:', !!owner);
+    log('#owner loaded:', !!owner);
     
     if (!owner) {
-      console.log('Timeout waiting for #owner element - video page DOM not ready');
+      log('Timeout waiting for #owner element - video page DOM not ready');
       return;
     }
     
@@ -189,27 +193,27 @@ async function checkVideoPage() {
     for (const selector of ownerLinkSelectors) {
       ownerLink = document.querySelector(selector);
       if (ownerLink) {
-        console.log('Found owner link with selector:', selector, ownerLink.href);
+        log('Found owner link with selector:', selector, ownerLink.href);
         break;
       }
     }
     
     if (!ownerLink) {
-      console.log('Could not find channel owner link with specific selectors');
-      console.log('Available ytd-channel-name elements:', document.querySelectorAll('ytd-channel-name').length);
+      log('Could not find channel owner link with specific selectors');
+      log('Available ytd-channel-name elements:', document.querySelectorAll('ytd-channel-name').length);
       
       // Try to find channel links ONLY in the video metadata area, not sidebar
       const metadata = document.querySelector('ytd-watch-metadata, #owner');
       if (metadata) {
         const metadataLinks = Array.from(metadata.querySelectorAll('a[href*="/@"], a[href*="/channel/"]'));
-        console.log('Channel links in metadata area:', metadataLinks.length);
+        log('Channel links in metadata area:', metadataLinks.length);
         
         if (metadataLinks.length > 0) {
           ownerLink = metadataLinks[0];
-          console.log('Using first metadata area channel link:', ownerLink.href);
+          log('Using first metadata area channel link:', ownerLink.href);
         }
       } else {
-        console.log('Could not find video metadata container');
+        log('Could not find video metadata container');
       }
     }
     
@@ -226,7 +230,7 @@ async function checkVideoPage() {
     for (const selector of videoTitleSelectors) {
       videoTitle = document.querySelector(selector);
       if (videoTitle) {
-        console.log('Found video title with selector:', selector);
+        log('Found video title with selector:', selector);
         break;
       }
     }
@@ -251,11 +255,11 @@ async function checkVideoPage() {
       // Store the channel name
       currentVideoChannelName = channelNameText;
       
-      console.log('Video page - Channel ID:', channelId);
-      console.log('Video page - Channel Name:', currentVideoChannelName);
+      log('Video page - Channel ID:', channelId);
+      log('Video page - Channel Name:', currentVideoChannelName);
       
       if (channelId && highlightedChannels[channelId]) {
-        console.log('Video is from highlighted channel, adding warning to title');
+        log('Video is from highlighted channel, adding warning to title');
         
         // Find the video title
         if (videoTitle && !videoTitle.querySelector('.yt-ai-warning')) {
@@ -275,13 +279,13 @@ async function checkVideoPage() {
           warning.style.border = '1px solid rgba(255, 136, 0, 0.4)';
           
           videoTitle.appendChild(warning);
-          console.log('Warning added to video title');
+          log('Warning added to video title');
         } else if (!videoTitle) {
-          console.log('Could not find video title element');
+          log('Could not find video title element');
         }
       }
     } else {
-      console.log('Could not find channel owner link');
+      log('Could not find channel owner link');
     }
   } else {
     // Remove warning if setting is disabled - try multiple selectors
@@ -318,18 +322,18 @@ function highlightElement(element) {
     }
     element.style.backgroundColor = '';
     element.style.border = '';
-    console.log('Channel header warnings disabled, removed highlights');
+    log('Channel header warnings disabled, removed highlights');
     return;
   }
   
   element.classList.add('yt-highlighted-channel');
   
-  console.log('highlightElement called on:', element);
-  console.log('Element HTML:', element.innerHTML.substring(0, 200));
+  log('highlightElement called on:', element);
+  log('Element HTML:', element.innerHTML.substring(0, 200));
   
   // Don't add duplicate warnings
   if (element.querySelector('.yt-ai-warning')) {
-    console.log('Warning already exists, skipping');
+    log('Warning already exists, skipping');
     return;
   }
   
@@ -346,9 +350,9 @@ function highlightElement(element) {
   for (const selector of selectors) {
     channelNameSpan = element.querySelector(selector);
     if (channelNameSpan) {
-      console.log('Found channel name with selector:', selector);
-      console.log('Channel name element:', channelNameSpan);
-      console.log('Channel name text:', channelNameSpan.textContent);
+      log('Found channel name with selector:', selector);
+      log('Channel name element:', channelNameSpan);
+      log('Channel name text:', channelNameSpan.textContent);
       break;
     }
   }
@@ -371,16 +375,16 @@ function highlightElement(element) {
     
     // Insert right after the channel name span
     channelNameSpan.insertAdjacentElement('afterend', warning);
-    console.log('Warning inserted successfully');
+    log('Warning inserted successfully');
   } else {
-    console.log('Could not find channel name element. Element structure:', element.outerHTML.substring(0, 500));
+    log('Could not find channel name element. Element structure:', element.outerHTML.substring(0, 500));
   }
   
   // Add subtle background highlight
   element.style.backgroundColor = 'rgba(255, 165, 0, 0.15)';
   element.style.border = '2px solid orange';
   element.style.transition = 'all 0.3s ease';
-  console.log('Background highlight applied');
+  log('Background highlight applied');
 }
 
 // Remove highlight from an element
@@ -401,7 +405,7 @@ function unhighlightElement(element) {
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Content script received message:', request);
+  log('Content script received message:', request);
   
   if (request.action === 'updateHighlights') {
     highlightedChannels = request.channels || {};
@@ -418,7 +422,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   if (request.action === 'updateSettings') {
     settings = request.settings || settings;
-    console.log('Settings updated:', settings);
+    log('Settings updated:', settings);
     // Re-apply all highlights with new settings
     applyHighlights();
     sendResponse({ success: true });
@@ -449,6 +453,6 @@ if (document.readyState === 'loading') {
 // Re-apply highlights when navigating (YouTube SPA)
 // Listen for YouTube's custom navigation event instead of MutationObserver
 document.addEventListener('yt-navigate-finish', () => {
-  console.log('YouTube navigation finished, re-applying highlights');
+  log('YouTube navigation finished, re-applying highlights');
   applyHighlights(); // No delay needed - function waits for elements internally
 });
