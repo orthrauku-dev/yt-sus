@@ -3,7 +3,7 @@ import datetime
 import json
 import logging
 import os
-import hashlib
+import re
 from azure.data.tables import TableServiceClient, UpdateMode
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
@@ -13,7 +13,7 @@ app = func.FunctionApp()
 # In-memory rate limiting (expires old entries automatically)
 vote_rate_limit = {}  # Format: {ip_channel_hash: timestamp}
 VOTE_COOLDOWN_HOURS = 24  # Same IP can't vote for same channel within 24 hours
-MAX_VOTES_PER_IP_PER_HOUR = 10  # Prevent mass voting sprees
+MAX_VOTES_PER_IP_PER_HOUR = 1  # Prevent mass voting sprees
 
 def cleanup_old_rate_limits():
     """Remove expired entries from rate limit dictionary"""
@@ -48,6 +48,14 @@ def check_rate_limit(ip: str, channel_id: str) -> tuple[bool, str]:
     
     now = datetime.datetime.utcnow()
     
+    # Check 0: Check for validation failure penalties (aggressive blocking)
+    validation_failures = sum(1 for k, v in vote_rate_limit.items() 
+                              if k.startswith(f"{ip}:_validation_failure_") 
+                              and (now - v).total_seconds() < 3600)  # Count failures in last hour
+    
+    if validation_failures >= 3:
+        return False, f"Too many invalid requests. Access temporarily blocked. Please try again later."
+    
     # Check 1: Has this IP voted for this channel recently?
     ip_channel_key = f"{ip}:{channel_id}"
     
@@ -72,6 +80,117 @@ def record_vote(ip: str, channel_id: str):
     """Record that this IP voted for this channel"""
     ip_channel_key = f"{ip}:{channel_id}"
     vote_rate_limit[ip_channel_key] = datetime.datetime.utcnow()
+
+def record_validation_failure(ip: str, reason: str):
+    """
+    Record a validation failure as a penalty.
+    Uses a special marker to indicate this was a failed attempt.
+    This prevents abuse/probing of the API.
+    """
+    penalty_key = f"{ip}:_validation_failure_{datetime.datetime.utcnow().timestamp()}"
+    vote_rate_limit[penalty_key] = datetime.datetime.utcnow()
+    logging.warning(f"Validation failure penalty applied to {ip}: {reason}")
+
+# Input validation functions
+def validate_channel_id(channel_id: str) -> tuple[bool, str]:
+    """
+    Validate YouTube channel ID format.
+    Returns (is_valid, error_message)
+    
+    Valid formats:
+    - @username (new style): @example, @example123
+    - UCxxxxxxxxxx (channel ID): UC followed by 22 characters
+    - /c/CustomName or /user/Username (legacy)
+    """
+    if not channel_id or not isinstance(channel_id, str):
+        return False, "channelId must be a non-empty string"
+    
+    # Length check (prevent massive strings)
+    if len(channel_id) > 100:
+        return False, "channelId is too long (max 100 characters)"
+    
+    if len(channel_id) < 2:
+        return False, "channelId is too short (min 2 characters)"
+    
+    # Check for valid YouTube channel formats
+    # Format 1: @username (new handle format)
+    if channel_id.startswith('@'):
+        # Must be @followed by alphanumeric, underscores, hyphens (3-30 chars after @)
+        if not re.match(r'^@[a-zA-Z0-9_-]{3,30}$', channel_id):
+            return False, "Invalid @username format (must be 3-30 alphanumeric chars, underscores, or hyphens)"
+        return True, ""
+    
+    # Format 2: UCxxxxxxxxxx (YouTube channel ID)
+    if channel_id.startswith('UC'):
+        if not re.match(r'^UC[a-zA-Z0-9_-]{22}$', channel_id):
+            return False, "Invalid channel ID format (must be UC followed by 22 characters)"
+        return True, ""
+    
+    # Format 3: Legacy /c/ or /user/ format
+    if channel_id.startswith('/c/') or channel_id.startswith('/user/'):
+        if not re.match(r'^/(c|user)/[a-zA-Z0-9_-]{1,30}$', channel_id):
+            return False, "Invalid legacy channel format"
+        return True, ""
+    
+    return False, "channelId must start with @, UC, /c/, or /user/"
+
+def validate_channel_name(channel_name: str) -> tuple[bool, str]:
+    """
+    Validate channel name.
+    Returns (is_valid, error_message)
+    """
+    if not isinstance(channel_name, str):
+        return False, "channelName must be a string"
+    
+    # Length check
+    if len(channel_name) > 200:
+        return False, "channelName is too long (max 200 characters)"
+    
+    if len(channel_name) < 1:
+        return False, "channelName cannot be empty"
+    
+    # Check for control characters and null bytes (security)
+    if any(ord(c) < 32 and c not in '\t\n\r' for c in channel_name):
+        return False, "channelName contains invalid control characters"
+    
+    # Check for common injection patterns (XSS, SQL)
+    dangerous_patterns = [
+        r'<script',
+        r'javascript:',
+        r'onerror=',
+        r'onclick=',
+        r'onload=',
+        r'<iframe',
+        r'--',  # SQL comment
+        r';DROP',  # SQL injection
+        r'UNION.*SELECT',  # SQL injection
+    ]
+    
+    channel_name_lower = channel_name.lower()
+    for pattern in dangerous_patterns:
+        if re.search(pattern, channel_name_lower, re.IGNORECASE):
+            return False, "channelName contains potentially malicious content"
+    
+    return True, ""
+
+def sanitize_input(value: str, max_length: int = 200) -> str:
+    """
+    Sanitize string input by removing dangerous characters.
+    Returns cleaned string.
+    """
+    if not isinstance(value, str):
+        return "Unknown"
+    
+    # Truncate to max length
+    value = value[:max_length]
+    
+    # Remove null bytes and control characters (except tabs and newlines)
+    value = ''.join(c for c in value if ord(c) >= 32 or c in '\t\n\r')
+    
+    # Strip leading/trailing whitespace
+    value = value.strip()
+    
+    return value if value else "Unknown"
 
 # Initialize Table Service Client using Managed Identity
 def get_table_client(table_name: str):
@@ -319,12 +438,41 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
     channel_id = req_body.get('channelId')
     channel_name = req_body.get('channelName', 'Unknown')
     
+    # Validate channelId
     if not channel_id:
+        record_validation_failure(client_ip, "Missing channelId")
         return func.HttpResponse(
             json.dumps({"error": "channelId is required"}),
             mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
             status_code=400
         )
+    
+    is_valid, error_msg = validate_channel_id(channel_id)
+    if not is_valid:
+        logging.warning(f"Invalid channelId from {client_ip}: {error_msg}")
+        record_validation_failure(client_ip, f"Invalid channelId: {error_msg}")
+        return func.HttpResponse(
+            json.dumps({"error": error_msg}),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=400
+        )
+    
+    # Validate and sanitize channelName
+    is_valid, error_msg = validate_channel_name(channel_name)
+    if not is_valid:
+        logging.warning(f"Invalid channelName from {client_ip}: {error_msg}")
+        record_validation_failure(client_ip, f"Invalid channelName: {error_msg}")
+        return func.HttpResponse(
+            json.dumps({"error": error_msg}),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=400
+        )
+    
+    # Sanitize channel name as extra protection
+    channel_name = sanitize_input(channel_name, max_length=200)
     
     # Check rate limit
     is_allowed, rate_limit_reason = check_rate_limit(client_ip, channel_id)
