@@ -1,5 +1,5 @@
 // Voting system for YouTube channels
-const DEBUG_VOTING = true; // Set to true to enable debug logging
+const DEBUG_VOTING = false; // Set to true to enable debug logging
 const logVoting = DEBUG_VOTING ? console.log.bind(console) : () => {};
 const logVotingError = console.error.bind(console); // Always log errors
 
@@ -138,6 +138,28 @@ async function upvoteChannel(channelId, channelName) {
   try {
     if (!isExtensionContextValid()) {
       throw new Error('Extension context invalidated - please refresh the page');
+    }
+    
+    // Check if user has consented to data collection (first-time use)
+    const { votingConsent } = await chrome.storage.local.get(['votingConsent']);
+    if (!votingConsent) {
+      const userConsent = confirm(
+        'YouTube AI Content Warning - Data Collection Notice\n\n' +
+        'By voting on channels, you consent to:\n' +
+        '• Sending channel IDs and names to our server\n' +
+        '• Aggregating vote counts across all users\n' +
+        '• No personal information is collected\n\n' +
+        'This data helps the community identify AI-generated content.\n\n' +
+        'Click OK to consent and continue, or Cancel to decline.'
+      );
+      
+      if (!userConsent) {
+        throw new Error('User declined data collection consent');
+      }
+      
+      // Save consent
+      await chrome.storage.local.set({ votingConsent: true });
+      logVoting('User consented to data collection');
     }
     
     // Use background script to make the API call (avoids CORS issues)

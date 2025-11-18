@@ -4,8 +4,7 @@
   "version": "1.0.0",
   "description": "Identifies YouTube channels that may use AI-generated content through community voting and visual warning indicators on channel pages and videos.",
   "permissions": [
-    "storage",
-    "activeTab"
+    "storage"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
