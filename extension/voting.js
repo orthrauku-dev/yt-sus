@@ -214,6 +214,27 @@ async function addVotingButton() {
       return;
     }
 
+    // Extract channel name early so we can pass it to API
+    // Try multiple selectors to find the channel name
+    let channelNameElement = null;
+    let channelName = 'Unknown';
+    
+    // Try the page header channel name (most reliable)
+    channelNameElement = document.querySelector('yt-page-header-view-model span.yt-core-attributed-string[role="text"]');
+    if (channelNameElement) {
+      channelName = channelNameElement.textContent?.trim();
+      console.log('Found channel name via page header:', channelName);
+    }
+    
+    // Fallback: Try old YouTube layout selectors
+    if (!channelName || channelName === 'Unknown') {
+      channelNameElement = document.querySelector('#channel-name #text, ytd-channel-name yt-formatted-string');
+      channelName = channelNameElement?.textContent?.trim() || 'Unknown';
+      console.log('Found channel name via fallback selector:', channelName);
+    }
+    
+    console.log('Final channel name:', channelName);
+
     // Find the flexible actions container
     const actionsContainer = document.querySelector('yt-flexible-actions-view-model.yt-page-header-view-model__page-header-flexible-actions');
     console.log('Actions container found:', actionsContainer);
@@ -232,16 +253,16 @@ async function addVotingButton() {
       }
       
       // Use alternate container
-      return await createAndInsertButton(altContainer, channelId);
+      return await createAndInsertButton(altContainer, channelId, channelName);
     }
 
-    await createAndInsertButton(actionsContainer, channelId);
+    await createAndInsertButton(actionsContainer, channelId, channelName);
   } catch (error) {
     console.error('Error in addVotingButton:', error);
   }
 }
 
-async function createAndInsertButton(actionsContainer, channelId) {
+async function createAndInsertButton(actionsContainer, channelId, channelName) {
   try {
     // Don't check if button exists - we removed it in addVotingButton already
     console.log('Creating fresh vote button...');
@@ -314,10 +335,6 @@ async function createAndInsertButton(actionsContainer, channelId) {
     `;
     voteButton.appendChild(touchFeedback);
     
-    // Get channel name for API vote
-    const channelNameElement = document.querySelector('#channel-name #text, .ytd-channel-name yt-formatted-string');
-    const channelName = channelNameElement?.textContent?.trim() || 'Unknown';
-
     // Click handler
     voteButton.addEventListener('click', async () => {
       if (hasVotedThisSession(channelId)) {

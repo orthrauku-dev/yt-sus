@@ -13,7 +13,7 @@ app = func.FunctionApp()
 # In-memory rate limiting (expires old entries automatically)
 vote_rate_limit = {}  # Format: {ip_channel_hash: timestamp}
 VOTE_COOLDOWN_HOURS = 24  # Same IP can't vote for same channel within 24 hours
-MAX_VOTES_PER_IP_PER_HOUR = 1  # Prevent mass voting sprees
+MAX_VOTES_PER_IP_PER_HOUR = 10  # Prevent mass voting sprees
 
 def cleanup_old_rate_limits():
     """Remove expired entries from rate limit dictionary"""
