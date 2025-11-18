@@ -95,24 +95,16 @@ async function applyHighlights() {
   
   if (!isVideoPage) {
     // Wait for channel header to exist on channel pages
-    const channelHeaderSelectors = [
-      'ytd-page-header-renderer',
-      'ytd-c4-tabbed-header-renderer',
-      '#page-header'
-    ];
+    // Try all selectors at once with a combined selector
+    const channelHeaderSelector = 'ytd-page-header-renderer, ytd-c4-tabbed-header-renderer, #page-header';
     
-    let channelHeader = null;
-    for (const selector of channelHeaderSelectors) {
-      channelHeader = await waitForElement(selector, 3000);
-      if (channelHeader) {
-        console.log('Channel header found with selector:', selector);
-        break;
-      }
-    }
-    
-    console.log('Channel header element found:', channelHeader);
+    console.log('Waiting for channel header...');
+    const channelHeader = await waitForElement(channelHeaderSelector, 3000);
+    console.log('Channel header found:', !!channelHeader);
     
     if (channelHeader) {
+      console.log('Channel header element:', channelHeader.tagName, channelHeader.id);
+      
       // First, always unhighlight to clear any previous state
       unhighlightElement(channelHeader);
       
@@ -160,8 +152,19 @@ let currentVideoChannelName = null;
 async function checkVideoPage() {
   // Check if video title warnings are enabled
   if (settings.showVideoTitle) {
-    // Wait for video metadata section to load (contains channel link)
-    await waitForElement('ytd-watch-metadata', 3000);
+    // Wait for video metadata AND owner section to load
+    console.log('Waiting for video page elements to load...');
+    const metadata = await waitForElement('ytd-watch-metadata', 5000);
+    console.log('ytd-watch-metadata loaded:', !!metadata);
+    
+    // Also wait specifically for #owner which contains the channel link
+    const owner = await waitForElement('#owner', 5000);
+    console.log('#owner loaded:', !!owner);
+    
+    if (!owner) {
+      console.log('Timeout waiting for #owner element - video page DOM not ready');
+      return;
+    }
     
     // Find video owner channel link - try multiple selectors
     const ownerLinkSelectors = [
@@ -195,31 +198,18 @@ async function checkVideoPage() {
       console.log('Could not find channel owner link with specific selectors');
       console.log('Available ytd-channel-name elements:', document.querySelectorAll('ytd-channel-name').length);
       
-      // Try to find channel links NOT in the video player
-      const allChannelLinks = Array.from(document.querySelectorAll('a[href*="/@"], a[href*="/channel/"]'));
-      console.log('Total channel links on page:', allChannelLinks.length);
-      
-      const nonPlayerLinks = allChannelLinks.filter(link => !link.closest('.ytp-ce-element')); // Exclude video player end screen
-      console.log('Available channel links (excluding video player):', nonPlayerLinks.length);
-      
-      if (allChannelLinks.length > 0) {
-        console.log('First 3 channel links:');
-        allChannelLinks.slice(0, 3).forEach((link, i) => {
-          console.log(`  ${i + 1}. href: ${link.href}`);
-          console.log(`     class: ${link.className}`);
-          console.log(`     parent: ${link.parentElement?.tagName}.${link.parentElement?.className}`);
-          console.log(`     in player: ${!!link.closest('.ytp-ce-element')}`);
-        });
-      }
-      
-      if (nonPlayerLinks.length > 0) {
-        ownerLink = nonPlayerLinks[0];
-        console.log('Using first non-player channel link as fallback:', ownerLink.href);
+      // Try to find channel links ONLY in the video metadata area, not sidebar
+      const metadata = document.querySelector('ytd-watch-metadata, #owner');
+      if (metadata) {
+        const metadataLinks = Array.from(metadata.querySelectorAll('a[href*="/@"], a[href*="/channel/"]'));
+        console.log('Channel links in metadata area:', metadataLinks.length);
+        
+        if (metadataLinks.length > 0) {
+          ownerLink = metadataLinks[0];
+          console.log('Using first metadata area channel link:', ownerLink.href);
+        }
       } else {
-        console.log('All channel links are in video player - DOM may not be ready yet');
-        console.log('ytd-watch-metadata exists:', !!document.querySelector('ytd-watch-metadata'));
-        console.log('#owner exists:', !!document.querySelector('#owner'));
-        console.log('#below exists:', !!document.querySelector('#below'));
+        console.log('Could not find video metadata container');
       }
     }
     
