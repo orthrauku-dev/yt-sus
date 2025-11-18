@@ -1,9 +1,9 @@
 // Voting system for YouTube channels
-const DEBUG = false; // Set to true to enable debug logging
-const log = DEBUG ? console.log.bind(console) : () => {};
-const logError = console.error.bind(console); // Always log errors
+const DEBUG_VOTING = false; // Set to true to enable debug logging
+const logVoting = DEBUG_VOTING ? console.log.bind(console) : () => {};
+const logVotingError = console.error.bind(console); // Always log errors
 
-log('YouTube Voting System loaded');
+logVoting('YouTube Voting System loaded');
 
 const API_URL = 'https://yt-sus-func-eyamhschcdg3dcbx.eastus-01.azurewebsites.net/api';
 
@@ -38,9 +38,9 @@ async function loadVotingSettings() {
     if (result.warningSettings && result.warningSettings.voteThreshold !== undefined) {
       voteThreshold = result.warningSettings.voteThreshold;
     }
-    log('Voting enabled:', votingEnabled, 'Threshold:', voteThreshold);
+    logVoting('Voting enabled:', votingEnabled, 'Threshold:', voteThreshold);
   } catch (error) {
-    logError('Error loading voting settings:', error);
+    logVotingError('Error loading voting settings:', error);
   }
 }
 
@@ -78,23 +78,23 @@ async function getChannelVotesFromAPI(channelId) {
       const ageHours = Math.floor(age / 3600000);
       const ageMinutes = Math.floor((age % 3600000) / 60000);
       
-      log(`Cache check for ${channelId}:`);
-      log(`  Cached at: ${new Date(timestamp).toLocaleString()}`);
-      log(`  Current time: ${new Date(now).toLocaleString()}`);
-      log(`  Age: ${ageHours}h ${ageMinutes}m (${age}ms)`);
-      log(`  Cache duration: ${CACHE_DURATION}ms (24 hours)`);
-      log(`  Is expired? ${age >= CACHE_DURATION}`);
+      logVoting(`Cache check for ${channelId}:`);
+      logVoting(`  Cached at: ${new Date(timestamp).toLocaleString()}`);
+      logVoting(`  Current time: ${new Date(now).toLocaleString()}`);
+      logVoting(`  Age: ${ageHours}h ${ageMinutes}m (${age}ms)`);
+      logVoting(`  Cache duration: ${CACHE_DURATION}ms (24 hours)`);
+      logVoting(`  Is expired? ${age >= CACHE_DURATION}`);
       
       if (age < CACHE_DURATION) {
-        log(`Using cached vote count for ${channelId}: ${votes}`);
+        logVoting(`Using cached vote count for ${channelId}: ${votes}`);
         return votes;
       } else {
-        log(`Cache expired for ${channelId}, fetching fresh data`);
+        logVoting(`Cache expired for ${channelId}, fetching fresh data`);
       }
     }
     
     // Cache miss or expired - fetch from API via background script
-    log(`Fetching fresh vote count from API for ${channelId}`);
+    logVoting(`Fetching fresh vote count from API for ${channelId}`);
     const response = await chrome.runtime.sendMessage({
       action: 'getChannelVotes',
       channelId: channelId
@@ -110,18 +110,18 @@ async function getChannelVotesFromAPI(channelId) {
       };
       await chrome.storage.local.set({ [VOTES_CACHE_KEY]: votesCache });
       
-      log(`Cached vote count for ${channelId}: ${votes}`);
+      logVoting(`Cached vote count for ${channelId}: ${votes}`);
       return votes;
     }
     throw new Error('Failed to get votes from background script');
   } catch (error) {
-    logError('Failed to get votes from API:', error);
+    logVotingError('Failed to get votes from API:', error);
     // Fall back to local cache
     try {
       const votes = await getVotes();
       return votes[channelId] || 0;
     } catch (e) {
-      logError('Failed to get cached votes:', e);
+      logVotingError('Failed to get cached votes:', e);
       return 0;
     }
   }
@@ -164,17 +164,17 @@ async function upvoteChannel(channelId, channelName) {
       };
       await chrome.storage.local.set({ [VOTES_CACHE_KEY]: votesCache });
       
-      log(`Vote sent to API. Channel ${channelId} now has ${newVotes} votes`);
+      logVoting(`Vote sent to API. Channel ${channelId} now has ${newVotes} votes`);
       return newVotes;
     }
     
     // Log the actual error from background script
     const errorMsg = response?.error || 'Unknown error from background script';
-    logError('Background script vote failed:', errorMsg, response);
+    logVotingError('Background script vote failed:', errorMsg, response);
     throw new Error(`Failed to vote via background script: ${errorMsg}`);
     
   } catch (error) {
-    logError('Failed to send vote to API, saving locally:', error);
+    logVotingError('Failed to send vote to API, saving locally:', error);
     // Fall back to local storage
     const votes = await getVotes();
     votes[channelId] = (votes[channelId] || 0) + 1;
@@ -187,12 +187,12 @@ async function upvoteChannel(channelId, channelName) {
 function hasVotedThisSession(channelId) {
   const sessionVotes = sessionStorage.getItem('votedChannels');
   if (!sessionVotes) {
-    log(`No session votes found for ${channelId}`);
+    logVoting(`No session votes found for ${channelId}`);
     return false;
   }
   const voted = JSON.parse(sessionVotes);
   const hasVoted = voted.includes(channelId);
-  log(`Session votes:`, voted, `Has ${channelId} voted?`, hasVoted);
+  logVoting(`Session votes:`, voted, `Has ${channelId} voted?`, hasVoted);
   return hasVoted;
 }
 
@@ -209,23 +209,23 @@ function markAsVoted(channelId) {
 // Create and add voting button to channel header
 async function addVotingButton() {
   try {
-    log('=== addVotingButton called ===');
+    logVoting('=== addVotingButton called ===');
     
     // Always remove existing button first to ensure fresh state
     removeVotingButton();
     
     // Check if voting is enabled
     if (!votingEnabled) {
-      log('Voting is disabled, button removed');
+      logVoting('Voting is disabled, button removed');
       return;
     }
     
     // Check if we're on a channel page
     const channelId = extractChannelIdFromPage();
-    log('Extracted channel ID:', channelId);
+    logVoting('Extracted channel ID:', channelId);
     
     if (!channelId) {
-      log('Not on a channel page, skipping vote button');
+      logVoting('Not on a channel page, skipping vote button');
       return;
     }
 
@@ -238,32 +238,32 @@ async function addVotingButton() {
     channelNameElement = document.querySelector('yt-page-header-view-model span.yt-core-attributed-string[role="text"]');
     if (channelNameElement) {
       channelName = channelNameElement.textContent?.trim();
-      log('Found channel name via page header:', channelName);
+      logVoting('Found channel name via page header:', channelName);
     }
     
     // Fallback: Try old YouTube layout selectors
     if (!channelName || channelName === 'Unknown') {
       channelNameElement = document.querySelector('#channel-name #text, ytd-channel-name yt-formatted-string');
       channelName = channelNameElement?.textContent?.trim() || 'Unknown';
-      log('Found channel name via fallback selector:', channelName);
+      logVoting('Found channel name via fallback selector:', channelName);
     }
     
-    log('Final channel name:', channelName);
+    logVoting('Final channel name:', channelName);
 
     // Find the flexible actions container
     const actionsContainer = document.querySelector('yt-flexible-actions-view-model.yt-page-header-view-model__page-header-flexible-actions');
-    log('Actions container found:', actionsContainer);
+    logVoting('Actions container found:', actionsContainer);
     
     if (!actionsContainer) {
-      log('Could not find actions container for vote button');
-      log('Trying alternate selectors...');
+      logVoting('Could not find actions container for vote button');
+      logVoting('Trying alternate selectors...');
       
       // Try alternate selector
       const altContainer = document.querySelector('yt-flexible-actions-view-model');
-      log('Alternate container found:', altContainer);
+      logVoting('Alternate container found:', altContainer);
       
       if (!altContainer) {
-        log('No suitable container found');
+        logVoting('No suitable container found');
         return;
       }
       
@@ -273,19 +273,19 @@ async function addVotingButton() {
 
     await createAndInsertButton(actionsContainer, channelId, channelName);
   } catch (error) {
-    logError('Error in addVotingButton:', error);
+    logVotingError('Error in addVotingButton:', error);
   }
 }
 
 async function createAndInsertButton(actionsContainer, channelId, channelName) {
   try {
     // Don't check if button exists - we removed it in addVotingButton already
-    log('Creating fresh vote button...');
+    logVoting('Creating fresh vote button...');
 
-    log('Fetching vote count from API...');
+    logVoting('Fetching vote count from API...');
     // Get current vote count from API
     const voteCount = await getChannelVotesFromAPI(channelId);
-    log('Vote count:', voteCount);
+    logVoting('Vote count:', voteCount);
     
     // Update local cache with API value
     const votes = await getVotes();
@@ -293,23 +293,23 @@ async function createAndInsertButton(actionsContainer, channelId, channelName) {
     await saveVotes(votes);
     
     const hasVoted = hasVotedThisSession(channelId);
-    log('Has voted this session:', hasVoted);
+    logVoting('Has voted this session:', hasVoted);
 
     // Check if threshold reached - auto-add to AI warning list
     if (voteCount >= voteThreshold) {
-      log(`Channel ${channelId} has reached threshold (${voteCount} >= ${voteThreshold})`);
+      logVoting(`Channel ${channelId} has reached threshold (${voteCount} >= ${voteThreshold})`);
       
       // Check if already in the warned list
       const response = await chrome.runtime.sendMessage({ action: 'getHighlightedChannels' });
       const highlightedChannels = response.channels || {};
       
       if (!highlightedChannels[channelId]) {
-        log(`Auto-adding ${channelId} to warning list`);
+        logVoting(`Auto-adding ${channelId} to warning list`);
         await addChannelToWarningList(channelId, voteCount);
         // Don't continue creating the button since we're reloading
         return;
       } else {
-        log(`Channel ${channelId} already in warning list`);
+        logVoting(`Channel ${channelId} already in warning list`);
       }
     }
 
@@ -353,7 +353,7 @@ async function createAndInsertButton(actionsContainer, channelId, channelName) {
     // Click handler
     voteButton.addEventListener('click', async () => {
       if (hasVotedThisSession(channelId)) {
-        log('Already voted for this channel in this session');
+        logVoting('Already voted for this channel in this session');
         return;
       }
 
@@ -398,15 +398,15 @@ async function createAndInsertButton(actionsContainer, channelId, channelName) {
         // Show feedback
         showVoteFeedback(voteButton);
         
-        log(`Upvoted channel ${channelId}, new count: ${newCount}`);
+        logVoting(`Upvoted channel ${channelId}, new count: ${newCount}`);
         
         // Check if threshold reached - auto-add to AI warning list
         if (newCount >= voteThreshold) {
-          log(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
+          logVoting(`Channel ${channelId} reached threshold (${newCount} >= ${voteThreshold}), adding to AI warning list`);
           await addChannelToWarningList(channelId, newCount);
         }
       } catch (error) {
-        logError('Error voting:', error);
+        logVotingError('Error voting:', error);
         // Restore original content on error
         buttonContent.innerHTML = originalContent;
         voteButton.disabled = false;
@@ -448,9 +448,9 @@ async function createAndInsertButton(actionsContainer, channelId, channelName) {
       actionsContainer.appendChild(voteButtonContainer);
     }
     
-    log(`Vote button added for channel ${channelId} with ${voteCount} votes`);
+    logVoting(`Vote button added for channel ${channelId} with ${voteCount} votes`);
   } catch (error) {
-    logError('Error creating vote button:', error);
+    logVotingError('Error creating vote button:', error);
   }
 }
 
@@ -459,7 +459,7 @@ function removeVotingButton() {
   const existingButton = document.querySelector('.yt-ai-vote-button');
   if (existingButton) {
     existingButton.remove();
-    log('Vote button removed');
+    logVoting('Vote button removed');
   }
 }
 
@@ -493,12 +493,12 @@ async function addChannelToWarningList(channelId, voteCount) {
   });
   
   if (response && response.success) {
-    log(`Channel ${channelId} (${channelName}) added to warning list with ${voteCount} votes`);
+    logVoting(`Channel ${channelId} (${channelName}) added to warning list with ${voteCount} votes`);
     
     // Show notification
     showThresholdNotification();
   } else {
-    log(`Channel ${channelId} was already in the list or failed to add`);
+    logVoting(`Channel ${channelId} was already in the list or failed to add`);
   }
 }
 
@@ -597,8 +597,8 @@ async function initVoting() {
       return;
     }
     
-    log('Initializing voting system...');
-    log('Current URL:', window.location.pathname);
+    logVoting('Initializing voting system...');
+    logVoting('Current URL:', window.location.pathname);
     
     // Clear any pending initialization
     if (initializationTimeout) {
@@ -611,19 +611,19 @@ async function initVoting() {
     
     // Only run on channel pages
     if (!window.location.pathname.match(/\/@|\/channel\/|\/c\/|\/user\//)) {
-      log('Not on a channel page, skipping voting button');
+      logVoting('Not on a channel page, skipping voting button');
       return;
     }
     
-    log('On channel page, will add voting button');
+    logVoting('On channel page, will add voting button');
     
     // Wait for page to load, then add button once
     initializationTimeout = setTimeout(() => {
-      log('Adding voting button after page load');
+      logVoting('Adding voting button after page load');
       addVotingButton();
     }, 1500);
   } catch (error) {
-    logError('Error initializing voting system:', error);
+    logVotingError('Error initializing voting system:', error);
   }
 }
 
@@ -631,7 +631,7 @@ async function initVoting() {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'updateSettings') {
     votingEnabled = request.settings.showVoting;
-    log('Voting setting updated:', votingEnabled);
+    logVoting('Voting setting updated:', votingEnabled);
     
     if (votingEnabled) {
       addVotingButton();
@@ -647,8 +647,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 // Re-initialize when URL changes (YouTube SPA navigation)
 // Use YouTube's navigation event instead of MutationObserver to avoid infinite loops
 document.addEventListener('yt-navigate-finish', () => {
-  log('YouTube navigation finished');
-  log('Re-initializing voting system after navigation');
+  logVoting('YouTube navigation finished');
+  logVoting('Re-initializing voting system after navigation');
   removeVotingButton();
   initVoting();
 });

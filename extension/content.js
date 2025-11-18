@@ -1,6 +1,6 @@
 // Content script for YouTube pages
-const DEBUG = false; // Set to true to enable debug logging
-const log = DEBUG ? console.log.bind(console) : () => {};
+const DEBUG_CONTENT = false; // Set to true to enable debug logging
+const log = DEBUG_CONTENT ? console.log.bind(console) : () => {};
 const logError = console.error.bind(console); // Always log errors
 
 log('YouTube AI Content Warning content script loaded');
