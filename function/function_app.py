@@ -3,11 +3,75 @@ import datetime
 import json
 import logging
 import os
+import hashlib
 from azure.data.tables import TableServiceClient, UpdateMode
 from azure.identity import DefaultAzureCredential
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 
 app = func.FunctionApp()
+
+# In-memory rate limiting (expires old entries automatically)
+vote_rate_limit = {}  # Format: {ip_channel_hash: timestamp}
+VOTE_COOLDOWN_HOURS = 24  # Same IP can't vote for same channel within 24 hours
+MAX_VOTES_PER_IP_PER_HOUR = 10  # Prevent mass voting sprees
+
+def cleanup_old_rate_limits():
+    """Remove expired entries from rate limit dictionary"""
+    now = datetime.datetime.utcnow()
+    cutoff = now - datetime.timedelta(hours=VOTE_COOLDOWN_HOURS)
+    
+    # Remove entries older than cooldown period
+    expired_keys = [k for k, v in vote_rate_limit.items() if v < cutoff]
+    for key in expired_keys:
+        del vote_rate_limit[key]
+    
+    if expired_keys:
+        logging.info(f"Cleaned up {len(expired_keys)} expired rate limit entries")
+
+def get_client_ip(req: func.HttpRequest) -> str:
+    """Extract client IP from request, handling proxies"""
+    # Try X-Forwarded-For first (for proxies/load balancers)
+    forwarded_for = req.headers.get('X-Forwarded-For')
+    if forwarded_for:
+        # Take the first IP in the chain
+        return forwarded_for.split(',')[0].strip()
+    
+    # Fall back to X-Client-IP or direct connection
+    return req.headers.get('X-Client-IP') or req.headers.get('REMOTE_ADDR') or 'unknown'
+
+def check_rate_limit(ip: str, channel_id: str) -> tuple[bool, str]:
+    """
+    Check if IP is rate limited for voting on this channel.
+    Returns (is_allowed, reason)
+    """
+    cleanup_old_rate_limits()
+    
+    now = datetime.datetime.utcnow()
+    
+    # Check 1: Has this IP voted for this channel recently?
+    ip_channel_key = f"{ip}:{channel_id}"
+    
+    if ip_channel_key in vote_rate_limit:
+        last_vote = vote_rate_limit[ip_channel_key]
+        hours_since = (now - last_vote).total_seconds() / 3600
+        
+        if hours_since < VOTE_COOLDOWN_HOURS:
+            return False, f"Please wait {int(VOTE_COOLDOWN_HOURS - hours_since)} hours before voting for this channel again"
+    
+    # Check 2: Has this IP been voting too frequently overall?
+    recent_votes = sum(1 for k, v in vote_rate_limit.items() 
+                      if k.startswith(f"{ip}:") 
+                      and (now - v).total_seconds() < 3600)
+    
+    if recent_votes >= MAX_VOTES_PER_IP_PER_HOUR:
+        return False, "Too many votes in the last hour. Please slow down."
+    
+    return True, ""
+
+def record_vote(ip: str, channel_id: str):
+    """Record that this IP voted for this channel"""
+    ip_channel_key = f"{ip}:{channel_id}"
+    vote_rate_limit[ip_channel_key] = datetime.datetime.utcnow()
 
 # Initialize Table Service Client using Managed Identity
 def get_table_client(table_name: str):
@@ -239,6 +303,10 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
     
     logging.info(f"Request validated from extension v{extension_version}, ID: {extension_id}")
     
+    # Get client IP for rate limiting
+    client_ip = get_client_ip(req)
+    logging.info(f"Request from IP: {client_ip}")
+    
     try:
         req_body = req.get_json()
     except ValueError:
@@ -256,6 +324,20 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
             json.dumps({"error": "channelId is required"}),
             mimetype="application/json",
             status_code=400
+        )
+    
+    # Check rate limit
+    is_allowed, rate_limit_reason = check_rate_limit(client_ip, channel_id)
+    if not is_allowed:
+        logging.warning(f"Vote rejected for {channel_id} from {client_ip}: {rate_limit_reason}")
+        return func.HttpResponse(
+            json.dumps({
+                "error": rate_limit_reason,
+                "type": "rate_limit"
+            }),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=429  # Too Many Requests
         )
     
     try:
@@ -311,6 +393,9 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
                 table_client.update_entity(entity, mode=UpdateMode.MERGE)
                 new_votes = current_votes + 1
                 logging.info(f"Retried and updated channel {channel_id}, new count: {new_votes}")
+        
+        # Record the vote for rate limiting
+        record_vote(client_ip, channel_id)
         
         return func.HttpResponse(
             json.dumps({
