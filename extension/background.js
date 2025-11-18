@@ -333,6 +333,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-Extension-Version': chrome.runtime.getManifest().version,
+        'X-Extension-ID': chrome.runtime.id
       },
       body: JSON.stringify({
         channelId: channelId,

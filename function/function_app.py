@@ -26,27 +26,6 @@ def get_table_client(table_name: str):
     table_service_client = TableServiceClient(endpoint=account_url, credential=credential)
     return table_service_client.get_table_client(table_name)
 
-@app.route(route="http_trigger", auth_level=func.AuthLevel.ANONYMOUS)
-def http_trigger(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function processed a request.')
-
-    name = req.params.get('name')
-    if not name:
-        try:
-            req_body = req.get_json()
-        except ValueError:
-            pass
-        else:
-            name = req_body.get('name')
-
-    if name:
-        return func.HttpResponse(f"Hello, {name}. This HTTP triggered function executed successfully.")
-    else:
-        return func.HttpResponse(
-             "This HTTP triggered function executed successfully. Pass a name in the query string or in the request body for a personalized response.",
-             status_code=200
-        )
-
 @app.route(route="flagged_channels", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET", "OPTIONS"])
 def flagged_channels(req: func.HttpRequest) -> func.HttpResponse:
     """
@@ -218,11 +197,47 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
             headers={
                 "Access-Control-Allow-Origin": "*",
                 "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type"
+                "Access-Control-Allow-Headers": "Content-Type, X-Extension-Version, X-Extension-ID"
             }
         )
     
     logging.info('Vote channel API called')
+    
+    # Validate request is from the extension
+    extension_version = req.headers.get('X-Extension-Version')
+    extension_id = req.headers.get('X-Extension-ID')
+    
+    if not extension_version or not extension_id:
+        logging.warning(f"Vote rejected: Missing extension headers")
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid request source"}),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=403
+        )
+    
+    # Validate extension version (must be 1.0.0 or higher)
+    try:
+        version_parts = extension_version.split('.')
+        major_version = int(version_parts[0])
+        if major_version < 1:
+            logging.warning(f"Vote rejected: Invalid extension version {extension_version}")
+            return func.HttpResponse(
+                json.dumps({"error": "Extension version not supported"}),
+                mimetype="application/json",
+                headers={"Access-Control-Allow-Origin": "*"},
+                status_code=403
+            )
+    except (ValueError, IndexError):
+        logging.warning(f"Vote rejected: Malformed extension version {extension_version}")
+        return func.HttpResponse(
+            json.dumps({"error": "Invalid extension version format"}),
+            mimetype="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            status_code=403
+        )
+    
+    logging.info(f"Request validated from extension v{extension_version}, ID: {extension_id}")
     
     try:
         req_body = req.get_json()
@@ -318,71 +333,5 @@ def vote_channel(req: func.HttpRequest) -> func.HttpResponse:
             }),
             mimetype="application/json",
             headers={"Access-Control-Allow-Origin": "*"},
-            status_code=500
-        )
-
-@app.route(route="table_read", auth_level=func.AuthLevel.ANONYMOUS, methods=["GET"])
-def table_read(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Table read function triggered.')
-    
-    try:
-        # Get table name from query parameters (default to ytsustable)
-        table_name = req.params.get('table', 'ytsustable')
-        
-        # Get optional filters
-        partition_key = req.params.get('partitionKey')
-        row_key = req.params.get('rowKey')
-        
-        logging.info(f"Reading from table: {table_name}")
-        table_client = get_table_client(table_name)
-        
-        # If both partition and row key are provided, get a specific entity
-        if partition_key and row_key:
-            logging.info(f"Getting entity: PK={partition_key}, RK={row_key}")
-            entity = table_client.get_entity(partition_key=partition_key, row_key=row_key)
-            return func.HttpResponse(
-                json.dumps(dict(entity), default=str),
-                mimetype="application/json",
-                status_code=200
-            )
-        
-        # If only partition key is provided, query by partition
-        elif partition_key:
-            logging.info(f"Querying partition: {partition_key}")
-            entities = table_client.query_entities(f"PartitionKey eq '{partition_key}'")
-            results = [dict(entity) for entity in entities]
-            return func.HttpResponse(
-                json.dumps(results, default=str),
-                mimetype="application/json",
-                status_code=200
-            )
-        
-        # Otherwise, list all entities (with a limit to avoid large responses)
-        else:
-            logging.info("Listing all entities (max 100)")
-            entities = table_client.list_entities(results_per_page=100)
-            results = [dict(entity) for entity in entities.by_page().next()]
-            logging.info(f"Found {len(results)} entities")
-            return func.HttpResponse(
-                json.dumps({
-                    "count": len(results),
-                    "entities": results
-                }, default=str),
-                mimetype="application/json",
-                status_code=200
-            )
-            
-    except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        logging.error(f"Error reading from table: {str(e)}")
-        logging.error(f"Full traceback:\n{error_details}")
-        return func.HttpResponse(
-            json.dumps({
-                "error": str(e),
-                "type": type(e).__name__,
-                "details": error_details
-            }),
-            mimetype="application/json",
             status_code=500
         )

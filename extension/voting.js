@@ -8,6 +8,15 @@ const API_URL = 'http://localhost:7071/api';
 const VOTES_STORAGE_KEY = 'channelVotes';
 const VOTES_CACHE_KEY = 'channelVotesCache';
 
+// Check if extension context is valid
+function isExtensionContextValid() {
+  try {
+    return chrome.runtime && chrome.runtime.id !== undefined;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Settings
 let votingEnabled = true;
 let voteThreshold = 10;
@@ -15,8 +24,8 @@ let voteThreshold = 10;
 // Load settings
 async function loadVotingSettings() {
   try {
-    if (!chrome.storage) {
-      console.error('Chrome storage not available - extension context may be invalidated');
+    if (!isExtensionContextValid()) {
+      console.warn('Extension context invalidated - please refresh the page');
       return;
     }
     const result = await chrome.storage.local.get(['warningSettings']);
@@ -46,6 +55,12 @@ async function saveVotes(votes) {
 // Get vote count for a channel from API (via background script)
 async function getChannelVotesFromAPI(channelId) {
   try {
+    if (!isExtensionContextValid()) {
+      console.warn('Extension context invalidated - returning cached votes');
+      const votes = await getVotes();
+      return votes[channelId] || 0;
+    }
+    
     // Check cache first
     const cache = await chrome.storage.local.get([VOTES_CACHE_KEY]);
     const votesCache = cache[VOTES_CACHE_KEY] || {};
@@ -90,8 +105,13 @@ async function getChannelVotesFromAPI(channelId) {
   } catch (error) {
     console.error('Failed to get votes from API:', error);
     // Fall back to local cache
-    const votes = await getVotes();
-    return votes[channelId] || 0;
+    try {
+      const votes = await getVotes();
+      return votes[channelId] || 0;
+    } catch (e) {
+      console.error('Failed to get cached votes:', e);
+      return 0;
+    }
   }
 }
 
@@ -104,6 +124,10 @@ async function getChannelVotes(channelId) {
 // Add an upvote for a channel (sends to API via background script)
 async function upvoteChannel(channelId, channelName) {
   try {
+    if (!isExtensionContextValid()) {
+      throw new Error('Extension context invalidated - please refresh the page');
+    }
+    
     // Use background script to make the API call (avoids CORS issues)
     const response = await chrome.runtime.sendMessage({
       action: 'voteChannel',
@@ -535,6 +559,12 @@ let initializationTimeout = null;
 
 async function initVoting() {
   try {
+    // Check if extension context is valid
+    if (!isExtensionContextValid()) {
+      console.warn('⚠️ Extension was reloaded. Please refresh this page to restore voting functionality.');
+      return;
+    }
+    
     console.log('Initializing voting system...');
     console.log('Current URL:', window.location.pathname);
     
