@@ -584,25 +584,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Re-initialize when URL changes (YouTube SPA navigation)
 // Use YouTube's navigation event instead of MutationObserver to avoid infinite loops
-let navigationTimeout = null;
 document.addEventListener('yt-navigate-finish', () => {
   console.log('YouTube navigation finished');
-  
-  // Debounce navigation events
-  if (navigationTimeout) {
-    clearTimeout(navigationTimeout);
-  }
-  
-  navigationTimeout = setTimeout(() => {
-    console.log('Re-initializing voting system after navigation');
-    removeVotingButton();
-    initVoting();
-  }, 500);
-});
-
-// Initialize on load
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initVoting);
-} else {
+  console.log('Re-initializing voting system after navigation');
+  removeVotingButton();
   initVoting();
-}
+});

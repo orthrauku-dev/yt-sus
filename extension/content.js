@@ -20,10 +20,7 @@ async function init() {
   }
   console.log('Loaded settings:', settings);
   
-  applyHighlights();
-  
-  // Set up observer to watch for dynamic content
-  observePageChanges();
+  // Don't call applyHighlights here - it will be triggered by yt-navigate-finish event
 }
 
 // Extract channel ID from various YouTube URL formats
@@ -286,65 +283,6 @@ function unhighlightElement(element) {
   element.style.transition = '';
 }
 
-// Observe page changes (YouTube is a SPA)
-function observePageChanges() {
-  const observer = new MutationObserver((mutations) => {
-    try {
-      // Ignore mutations from our own warning additions
-      const isOurChange = mutations.some(mutation => 
-        Array.from(mutation.addedNodes).some(node => {
-          if (!node) return false;
-          
-          // Check classList first (most reliable)
-          if (node.classList && (node.classList.contains('yt-ai-warning') || node.classList.contains('yt-highlighted-channel'))) {
-            return true;
-          }
-          
-          // Check className only if it's a string
-          if (node.className && typeof node.className === 'string') {
-            if (node.className.includes('yt-ai-warning') || node.className.includes('yt-highlighted-channel')) {
-              return true;
-            }
-          }
-          
-          // Check if it contains warning elements
-          if (node.querySelector) {
-            try {
-              if (node.querySelector('.yt-ai-warning')) {
-                return true;
-              }
-            } catch (e) {
-              // Ignore querySelector errors
-            }
-          }
-          
-          return false;
-        })
-      );
-      
-      if (isOurChange) {
-        return; // Don't trigger on our own changes
-      }
-      
-      // Debounce the highlight application
-      clearTimeout(window.highlightTimeout);
-      window.highlightTimeout = setTimeout(() => {
-        applyHighlights();
-      }, 500);
-    } catch (error) {
-      // Silently ignore errors in observer
-      console.log('Observer error (ignored):', error.message);
-    }
-  });
-  
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-  
-  console.log('Observer set up for page changes');
-}
-
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('Content script received message:', request);
@@ -393,12 +331,8 @@ if (document.readyState === 'loading') {
 }
 
 // Re-apply highlights when navigating (YouTube SPA)
-let lastUrl = location.href;
-new MutationObserver(() => {
-  const url = location.href;
-  if (url !== lastUrl) {
-    lastUrl = url;
-    console.log('URL changed, re-applying highlights');
-    setTimeout(applyHighlights, 1000);
-  }
-}).observe(document, { subtree: true, childList: true });
+// Listen for YouTube's custom navigation event instead of MutationObserver
+document.addEventListener('yt-navigate-finish', () => {
+  console.log('YouTube navigation finished, re-applying highlights');
+  applyHighlights();
+});

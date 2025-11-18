@@ -1,7 +1,6 @@
 // Background service worker
 console.log('YouTube Sentiment Warning background script loaded');
 
-const API_URL = 'http://localhost:7071/api/flagged_channels';
 const API_BASE_URL = 'http://localhost:7071/api';
 // When deploying, change to: 'https://YOUR-FUNCTION-APP.azurewebsites.net/api'
 
@@ -43,7 +42,7 @@ async function fetchFlaggedChannelsFromAPI(forceSync = false) {
     }
     
     console.log('Fetching flagged channels from API...');
-    const response = await fetch(API_URL);
+    const response = await fetch(`${API_BASE_URL}/flagged_channels`);
     
     if (!response.ok) {
       throw new Error(`API returned ${response.status}`);
