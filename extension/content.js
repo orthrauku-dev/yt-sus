@@ -1,5 +1,5 @@
 // Content script for YouTube pages
-const DEBUG_CONTENT = false; // Set to true to enable debug logging
+const DEBUG_CONTENT = true; // Set to true to enable debug logging
 const log = DEBUG_CONTENT ? console.log.bind(console) : () => {};
 const logError = console.error.bind(console); // Always log errors
 
@@ -57,34 +57,61 @@ function extractChannelId(url) {
 function isChannelFlagged(channelId) {
   if (!channelId) return false;
   
-  log('Checking if channel is flagged:', channelId);
+  log('=== isChannelFlagged DEBUG ===');
+  log('Input channelId:', channelId);
+  log('Input channelId type:', typeof channelId);
+  log('Input channelId length:', channelId.length);
   log('Available keys in highlightedChannels:', Object.keys(highlightedChannels));
   
-  // Direct match
+  // Direct match (exact case)
   if (highlightedChannels[channelId]) {
-    log('Direct match found for:', channelId);
+    log('✓ Direct match found for:', channelId);
     return true;
   }
+  log('✗ No direct match for:', channelId);
   
-  // If channelId is UC... format, also check if there's a handle match
-  // Loop through all flagged channels to find if any have this channel ID
+  // For @handle format, do case-insensitive matching
+  const channelIdLower = channelId.toLowerCase();
+  log('channelId lowercased:', channelIdLower);
+  
+  // Loop through all flagged channels to find matches
   for (const [key, channel] of Object.entries(highlightedChannels)) {
-    log(`Checking ${key}:`, channel);
+    log(`--- Comparing with key: "${key}" ---`);
+    log('Key type:', typeof key);
+    log('Key length:', key.length);
+    log('Key lowercased:', key.toLowerCase());
+    log('Channel object:', JSON.stringify(channel, null, 2));
     
-    // Check if the stored channel has an 'id' property that matches
-    if (channel.id === channelId) {
-      log('Found match via channel.id property:', key);
+    // Case-insensitive match for handles (starting with @)
+    if (channelId.startsWith('@') && key.toLowerCase() === channelIdLower) {
+      log('✓ Found case-insensitive handle match via KEY:', key);
       return true;
     }
+    log(`✗ Key match failed. key.toLowerCase() "${key.toLowerCase()}" === channelIdLower "${channelIdLower}"? ${key.toLowerCase() === channelIdLower}`);
     
-    // Also check if the key itself contains the channel ID
-    if (key === channelId) {
-      log('Found match via key:', key);
+    // Check if the stored channel has an 'id' property that matches (case-insensitive for handles)
+    if (channel.id) {
+      log('Channel has id property:', channel.id);
+      log('channel.id lowercased:', channel.id.toLowerCase());
+      
+      if (channel.id.startsWith('@') && channel.id.toLowerCase() === channelIdLower) {
+        log('✓ Found match via channel.id property (case-insensitive):', key);
+        return true;
+      } else if (channel.id === channelId) {
+        log('✓ Found match via channel.id property (exact):', key);
+        return true;
+      }
+      log(`✗ channel.id match failed. channel.id.toLowerCase() "${channel.id.toLowerCase()}" === channelIdLower "${channelIdLower}"? ${channel.id.toLowerCase() === channelIdLower}`);
+    }
+    
+    // Exact match for non-handle IDs (UC... format, etc.)
+    if (!channelId.startsWith('@') && key === channelId) {
+      log('✓ Found exact match via key:', key);
       return true;
     }
   }
   
-  log('No match found for:', channelId);
+  log('=== No match found for:', channelId, '===');
   return false;
 }
 
@@ -131,11 +158,12 @@ function waitForElement(selector, timeout = 5000) {
 async function applyHighlights() {
   log('Applying highlights...');
   log('Highlighted channels:', highlightedChannels);
+  log('Settings:', settings);
   
   // Check if we're on a video page (don't try to highlight channel header on video pages)
   const isVideoPage = window.location.pathname.startsWith('/watch');
   
-  if (!isVideoPage) {
+  if (!isVideoPage && settings.showChannelHeader) {
     // Wait for channel header to exist on channel pages
     // Try all selectors at once with a combined selector
     const channelHeaderSelector = 'ytd-page-header-renderer, ytd-c4-tabbed-header-renderer, #page-header';
@@ -150,17 +178,67 @@ async function applyHighlights() {
       // First, always unhighlight to clear any previous state
       unhighlightElement(channelHeader);
       
-      const channelLink = channelHeader.querySelector('a[href*="/channel/"], a[href*="/@"], a.yt-simple-endpoint[href*="/@"]');
-      log('Channel link found:', channelLink);
-      log('Channel link href:', channelLink?.href);
+      // Find ALL channel links in the header to get both handle and canonical ID
+      const allChannelLinks = channelHeader.querySelectorAll('a[href*="/channel/"], a[href*="/@"], a.yt-simple-endpoint[href*="/@"]');
+      log('ALL channel links found:', allChannelLinks.length);
+      allChannelLinks.forEach((link, i) => {
+        log(`  Link ${i}:`, link.href);
+      });
       
-      if (channelLink) {
-        const channelId = extractChannelId(channelLink.href);
-        log('Extracted channel ID:', channelId);
-        log('Is highlighted?:', highlightedChannels[channelId]);
+      const channelLink = allChannelLinks[0];
+      log('Using first channel link:', channelLink?.href);
+      
+      // Collect all possible channel identifiers
+      let channelIds = [];
+      
+      // Extract from all links
+      allChannelLinks.forEach(link => {
+        const id = extractChannelId(link.href);
+        if (id && !channelIds.includes(id)) {
+          channelIds.push(id);
+          log('Added channel ID from link:', id);
+        }
+      });
+      
+      // Also try to find the canonical channel ID from meta tags
+      const channelMetaTag = document.querySelector('meta[property="og:url"]');
+      if (channelMetaTag) {
+        const metaUrl = channelMetaTag.content;
+        log('Meta og:url:', metaUrl);
+        const id = extractChannelId(metaUrl);
+        if (id && !channelIds.includes(id)) {
+          channelIds.push(id);
+          log('Added channel ID from meta:', id);
+        }
+      }
+      
+      // Check the page URL itself
+      const urlId = extractChannelId(window.location.href);
+      if (urlId && !channelIds.includes(urlId)) {
+        channelIds.push(urlId);
+        log('Added channel ID from URL:', urlId);
+      }
+      
+      log('All collected channel IDs:', channelIds);
+      
+      if (channelIds.length > 0) {
+        log('Highlighted channels keys:', Object.keys(highlightedChannels));
         
-        if (channelId && highlightedChannels[channelId]) {
-          log('CALLING highlightElement for channel:', channelId);
+        // Check if ANY of the channel IDs match
+        let isFlagged = false;
+        for (const id of channelIds) {
+          log('Checking channel ID:', id);
+          if (isChannelFlagged(id)) {
+            log('✓ Match found for:', id);
+            isFlagged = true;
+            break;
+          }
+        }
+        
+        log('Is highlighted?:', isFlagged);
+        
+        if (isFlagged) {
+          log('CALLING highlightElement for channel');
           highlightElement(channelHeader);
         } else {
           log('Channel not in highlighted list or no ID found');
@@ -606,9 +684,6 @@ if (document.readyState === 'loading') {
 document.addEventListener('yt-navigate-start', () => {
   log('YouTube navigation starting, removing any stale warnings');
   
-  // Reset the current video ID so the next video can be processed
-  currentVideoId = null;
-  
   // Immediately remove all video warnings to prevent carryover
   const videoTitleSelectors = [
     'ytd-watch-metadata h1.ytd-watch-metadata yt-formatted-string',
@@ -629,7 +704,24 @@ document.addEventListener('yt-navigate-start', () => {
 
 // Re-apply highlights when navigating (YouTube SPA)
 // Listen for YouTube's custom navigation event instead of MutationObserver
-document.addEventListener('yt-navigate-finish', () => {
+document.addEventListener('yt-navigate-finish', async () => {
   log('YouTube navigation finished, re-applying highlights');
-  applyHighlights(); // No delay needed - function waits for elements internally
+  
+  // Check if we're navigating to a video page
+  const isVideoPage = window.location.pathname.startsWith('/watch');
+  
+  if (isVideoPage) {
+    // Reset current video ID when navigating to a video to allow re-processing
+    const urlParams = new URLSearchParams(window.location.search);
+    const newVideoId = urlParams.get('v');
+    
+    // If navigating to a different video, reset the tracking
+    if (newVideoId && newVideoId !== currentVideoId) {
+      log('Navigated to new video:', newVideoId, 'resetting currentVideoId');
+      currentVideoId = null;
+    }
+  }
+  
+  // Apply highlights (includes both channel page and video page checks)
+  await applyHighlights();
 });

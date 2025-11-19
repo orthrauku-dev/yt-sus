@@ -1,6 +1,4 @@
 // Popup script
-console.log('Popup script loaded');
-
 let currentChannelId = null;
 let currentChannelName = null;
 let currentChannelHandle = null;
@@ -36,8 +34,6 @@ const refreshAPIBtn = document.getElementById('refreshAPIBtn');
 
 // Initialize popup
 async function init() {
-  console.log('Initializing popup...');
-  
   // Load settings
   await loadSettings();
   
@@ -152,8 +148,6 @@ async function handleThresholdChange() {
   
   // Save settings
   await chrome.storage.local.set({ warningSettings: settings });
-  
-  console.log('Vote threshold changed to:', value);
 }
 
 // Load settings from storage
@@ -178,8 +172,6 @@ async function loadSettings() {
   } else {
     votingThreshold.classList.add('hidden');
   }
-  
-  console.log('Loaded settings:', settings);
 }
 
 // Handle setting toggle change
@@ -202,16 +194,12 @@ async function handleSettingChange(e) {
       // Ignore errors if content script isn't loaded
     });
   }
-  
-  console.log('Settings updated:', settings);
 }
 
 // Load highlighted channels from storage
 async function loadHighlightedChannels() {
   const response = await chrome.runtime.sendMessage({ action: 'getHighlightedChannels' });
   highlightedChannels = response.channels || {};
-  console.log('Loaded channels:', highlightedChannels);
-  
   updateChannelList();
 }
 
@@ -265,11 +253,8 @@ async function getCurrentChannelInfo() {
       toggleButton.textContent = '⚠️ Add Warning';
       toggleButton.classList.remove('highlighted');
     }
-    
   } catch (error) {
-    console.error('Error getting channel info:', error);
-    channelInfo.innerHTML = '<p class="info-text">Error loading channel info</p>';
-    toggleButton.disabled = true;
+    channelInfo.innerHTML = '<p class="info-text">Error loading channel information</p>';
   }
 }
 
@@ -445,7 +430,7 @@ async function removeChannel(channelId) {
     await loadHighlightedChannels();
     await getCurrentChannelInfo();
   } catch (error) {
-    console.error('Error removing channel:', error);
+    // Error removing channel
   }
 }
 
