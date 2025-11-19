@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "YouTube AI Content Warning",
   "version": "1.0.0",
-  "description": "Identifies YouTube channels that may use AI-generated content through community voting and visual warning indicators on channel pages and videos.",
+  "description": "Community-driven warnings for YouTube channels that may use AI-generated content. Voting system and visual indicators included.",
   "permissions": [
     "storage"
   ],
