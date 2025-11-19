@@ -364,36 +364,27 @@ async function checkVideoPage() {
     return null;
   };
   
-  // Get initial channel link
+  // Wait for DOM to be more stable before extracting channel info
+  log('Waiting for DOM to stabilize...');
+  await new Promise(resolve => setTimeout(resolve, 500));
+  
+  // Get the owner link after waiting
   let ownerLink = findOwnerLink();
+  
+  // If no link found, wait a bit longer and retry
   if (!ownerLink) {
-    log('Could not find channel owner link on first attempt');
-    return;
+    log('Could not find channel owner link on first attempt, waiting longer...');
+    await new Promise(resolve => setTimeout(resolve, 800));
+    ownerLink = findOwnerLink();
   }
   
-  const firstChannelHref = ownerLink.href;
-  log('First channel link found:', firstChannelHref);
-  
-  // Wait and verify the channel hasn't changed (DOM has stabilized)
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  ownerLink = findOwnerLink();
   if (!ownerLink) {
-    log('Channel link disappeared during stabilization wait');
+    log('Could not find channel owner link after retries');
+    currentVideoId = null; // Allow retry on next navigation
     return;
   }
   
-  const secondChannelHref = ownerLink.href;
-  log('Second channel link found:', secondChannelHref);
-  
-  // If the channel changed during our wait, the DOM hasn't stabilized yet - bail out
-  if (firstChannelHref !== secondChannelHref) {
-    log('Channel info changed during wait - DOM not stable, resetting currentVideoId');
-    currentVideoId = null; // Allow retry on next navigation event
-    return;
-  }
-  
-  log('Channel info stable, proceeding with:', ownerLink.href);
+  log('Channel link found:', ownerLink.href);
   
   // Additional check removed as we now verify stability above
   if (!ownerLink) {
@@ -420,41 +411,65 @@ async function checkVideoPage() {
     return;
   }
   
-  // Extract channel ID from the link
-  const channelId = extractChannelId(ownerLink.href);
+  log('=== EXTRACTING ALL CHANNEL IDENTIFIERS ===');
   
-  // Also try to find a link with the @handle format
-  // YouTube often has both /channel/UC... and /@handle links
-  let channelHandle = null;
+  // Collect ALL possible channel identifiers from the page
+  let channelIds = [];
   
-  // First try to extract handle from the current link
-  const handleMatch = ownerLink.href.match(/\/@([\w-]+)/);
-  if (handleMatch) {
-    channelHandle = `@${handleMatch[1]}`;
-  } else {
-    // If current link doesn't have handle, search for another link with handle format
-    const handleLinkSelectors = [
-      'ytd-video-owner-renderer a[href*="/@"]',
-      '#owner a[href*="/@"]',
-      'ytd-channel-name a[href*="/@"]',
-      'ytd-watch-metadata a[href*="/@"]'
-    ];
-    
-    for (const selector of handleLinkSelectors) {
-      const handleLink = document.querySelector(selector);
-      if (handleLink) {
-        const match = handleLink.href.match(/\/@([\w-]+)/);
-        if (match) {
-          channelHandle = `@${match[1]}`;
-          log('Found handle link via selector:', selector, handleLink.href);
-          break;
+  // 1. Extract from the primary owner link
+  const primaryId = extractChannelId(ownerLink.href);
+  if (primaryId) {
+    channelIds.push(primaryId);
+    log('Added primary ID from owner link:', primaryId);
+  }
+  
+  // 2. Find ALL channel links in the #owner and ytd-watch-metadata area
+  const allOwnerLinks = document.querySelectorAll('#owner a[href*="/channel/"], #owner a[href*="/@"], ytd-watch-metadata a[href*="/channel/"], ytd-watch-metadata a[href*="/@"]');
+  log('Found', allOwnerLinks.length, 'total channel links in owner/metadata area');
+  
+  allOwnerLinks.forEach((link, i) => {
+    log(`  Channel link ${i}:`, link.href);
+    const id = extractChannelId(link.href);
+    if (id && !channelIds.includes(id)) {
+      channelIds.push(id);
+      log('  -> Added ID:', id);
+    }
+  });
+  
+  // 3. Try to extract from meta tags
+  const ogUrlMeta = document.querySelector('meta[property="og:url"]');
+  if (ogUrlMeta && ogUrlMeta.content.includes('/watch')) {
+    log('Meta og:url (video):', ogUrlMeta.content);
+  }
+  
+  // 4. Check ytInitialData for channel info (YouTube stores data here)
+  try {
+    if (window.ytInitialData) {
+      log('Checking ytInitialData for channel info...');
+      const videoOwnerRenderer = JSON.stringify(window.ytInitialData).match(/"videoOwnerRenderer":\{[^}]*"navigationEndpoint":\{[^}]*"browseEndpoint":\{[^}]*"browseId":"([^"]+)"/);
+      if (videoOwnerRenderer && videoOwnerRenderer[1]) {
+        const ytDataId = videoOwnerRenderer[1];
+        log('Found channel ID in ytInitialData:', ytDataId);
+        if (!channelIds.includes(ytDataId)) {
+          channelIds.push(ytDataId);
+        }
+      }
+      
+      // Also try to get the handle from ytInitialData
+      const handleMatch = JSON.stringify(window.ytInitialData).match(/"canonicalChannelUrl":"[^"]*\/@([^"\/]+)"/);
+      if (handleMatch && handleMatch[1]) {
+        const handle = `@${handleMatch[1]}`;
+        log('Found handle in ytInitialData:', handle);
+        if (!channelIds.includes(handle)) {
+          channelIds.push(handle);
         }
       }
     }
+  } catch (e) {
+    log('Error checking ytInitialData:', e.message);
   }
   
-  log('Extracted channel ID:', channelId);
-  log('Extracted channel handle:', channelHandle);
+  log('=== ALL COLLECTED CHANNEL IDs:', channelIds, '===');
   
   // Get channel name from the DOM directly
   let channelNameText = '';
@@ -485,16 +500,27 @@ async function checkVideoPage() {
   
   // Store the channel info for current video
   currentVideoChannelName = channelNameText;
-  currentVideoChannelId = channelId;
+  currentVideoChannelId = channelIds[0] || null; // Store the first ID
   currentVideoId = videoId; // Mark this video as processed
   
-  log('Video page - Channel ID:', channelId);
-  log('Video page - Channel Handle:', channelHandle);
-  log('Video page - Channel Name:', currentVideoChannelName);
+  log('=== VIDEO PAGE SUMMARY ===');
+  log('Video ID:', videoId);
+  log('All Channel IDs found:', channelIds);
+  log('Channel Name:', currentVideoChannelName);
   
-  // Check both channel ID and handle
-  const isFlagged = isChannelFlagged(channelId) || (channelHandle && isChannelFlagged(channelHandle));
-  log('Is channel flagged?', isFlagged);
+  // Check if ANY of the channel IDs match a flagged channel
+  log('=== CHECKING IF FLAGGED ===');
+  let isFlagged = false;
+  for (const id of channelIds) {
+    log(`Checking ID: "${id}"`);
+    if (isChannelFlagged(id)) {
+      log('✓✓✓ MATCH FOUND FOR:', id);
+      isFlagged = true;
+      break;
+    }
+  }
+  
+  log('=== FINAL RESULT: Is channel flagged?', isFlagged, '===');
   
   if (!isFlagged) {
     log('Channel not flagged, no warning needed');
@@ -724,4 +750,14 @@ document.addEventListener('yt-navigate-finish', async () => {
   
   // Apply highlights (includes both channel page and video page checks)
   await applyHighlights();
+  
+  // On video pages, if the video wasn't processed (currentVideoId is still null), 
+  // retry after a longer delay to handle slow-loading DOM
+  if (isVideoPage && currentVideoId === null) {
+    log('Video not processed yet, scheduling retry in 1 second...');
+    setTimeout(async () => {
+      log('Retry: Re-checking video page');
+      await checkVideoPage();
+    }, 1000);
+  }
 });
