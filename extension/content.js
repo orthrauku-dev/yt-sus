@@ -1,5 +1,5 @@
 // Content script for YouTube pages
-const DEBUG_CONTENT = true; // Set to true to enable debug logging
+const DEBUG_CONTENT = false; // Set to true to enable debug logging
 const log = DEBUG_CONTENT ? console.log.bind(console) : () => {};
 const logError = console.error.bind(console); // Always log errors
 
